@@ -17,6 +17,7 @@ final class MinimapCache {
     private float zoom;
     private int layer = -1;
     private long seenChanges = -1, composedAt;
+    private boolean wasSmooth;
     int composes;
 
     int textureId() {
@@ -56,7 +57,10 @@ final class MinimapCache {
             side = wantSide;
             remake = true;
         }
-        target.setFilterMode(smooth ? GL11.GL_LINEAR : GL11.GL_NEAREST);
+        if (remake || smooth != wasSmooth) {
+            wasSmooth = smooth;
+            target.setFilterMode(smooth ? GL11.GL_LINEAR : GL11.GL_NEAREST);
+        }
         if (layerNow != layer || ppb != zoom) remake = true;
         if (Math.max(Math.abs(x - originX), Math.abs(z - originZ)) * ppb > margin) remake = true;
         // New pixels under the picture: at most a few times a second, nobody can see it any faster on a map this small.
