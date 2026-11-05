@@ -121,11 +121,13 @@ public final class WaypointScreen extends Screen {
 
         g.flush();
         RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
         g.pose().popPose();
         RenderSystem.disableDepthTest();
         super.render(g, mx, my, partial);
         g.flush();
         RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
     }
 
     private static void well(GuiGraphics g, float x0, float y0, float x1, float y1) {

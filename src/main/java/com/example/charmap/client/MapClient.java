@@ -94,7 +94,8 @@ public final class MapClient {
     public static boolean firstPixelsLogged;
     public static double frameMillis;
     private static long thisFrame;
-    public static long snapshotsTaken;
+    public static long snapshotsTaken, copyNanos, slowestCopy;
+    public static boolean worldShownLogged;
 
     public static void setup() {
         MapConfig.load();
@@ -138,6 +139,7 @@ public final class MapClient {
     private static void onLogin(ClientPlayerNetworkEvent.LoggingIn e) {
         joinNanos = System.nanoTime();
         firstPixelsLogged = false;
+        worldShownLogged = false;
     }
 
     private static void onLogout(ClientPlayerNetworkEvent.LoggingOut e) {
@@ -341,6 +343,10 @@ public final class MapClient {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
         long start = System.nanoTime();
+        if (!worldShownLogged && mc.screen == null && joinNanos != 0) {
+            worldShownLogged = true;
+            CharMap.LOG.info("[CharMap] loading screen gone {} ms after joining", (start - joinNanos) / 1_000_000L);
+        }
         try {
             s.textures.nextFrame();
             s.textures.upload(mc.screen instanceof MapScreen ? MAP_OPEN_UPLOAD_BUDGET : UPLOAD_BUDGET);
@@ -369,7 +375,11 @@ public final class MapClient {
             if (!s.pending.remove(key)) continue;
             LevelChunk chunk = level.getChunkSource().getChunkNow(at.x + order[i], at.z + order[i + 1]);
             if (chunk != null && !chunk.isEmpty()) {
+                long before = System.nanoTime();
                 copyChunk(s, chunk, Math.max(Math.abs(order[i]), Math.abs(order[i + 1])));
+                long took = System.nanoTime() - before;
+                copyNanos += took;
+                slowestCopy = Math.max(slowestCopy, took);
                 snapshotsTaken++;
             }
             if (s.pending.isEmpty()) return;

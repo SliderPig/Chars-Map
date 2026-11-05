@@ -96,6 +96,7 @@ public final class SettingsScreen extends Screen {
 
         g.flush();
         RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
         g.pose().popPose();
     }
 

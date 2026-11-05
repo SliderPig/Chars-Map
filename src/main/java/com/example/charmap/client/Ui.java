@@ -43,6 +43,7 @@ public final class Ui {
         Matrix4f m = g.pose().last().pose();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.enableBlend();
+        RenderSystem.disableCull();
         RenderSystem.defaultBlendFunc();
         BufferBuilder buf = Tesselator.getInstance().getBuilder();
         buf.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_COLOR);
@@ -61,6 +62,7 @@ public final class Ui {
         Matrix4f m = g.pose().last().pose();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.enableBlend();
+        RenderSystem.disableCull();
         RenderSystem.defaultBlendFunc();
         BufferBuilder buf = Tesselator.getInstance().getBuilder();
         buf.begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
@@ -130,6 +132,7 @@ public final class Ui {
         Matrix4f m = g.pose().last().pose();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.enableBlend();
+        RenderSystem.disableCull();
         RenderSystem.defaultBlendFunc();
         BufferBuilder buf = Tesselator.getInstance().getBuilder();
         buf.begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);

@@ -74,8 +74,12 @@ public final class Minimap {
         } catch (Throwable t) {
             CharMap.once("minimap", "Minimap couldn't draw, carrying on", t);
         }
-        MapClient.addFrameTime(System.nanoTime() - start);
+        long took = System.nanoTime() - start;
+        MapClient.addFrameTime(took);
+        drawMillis += (took / 1_000_000.0 - drawMillis) * 0.05;
     }
+
+    public static double drawMillis;
 
     private static void draw(GuiGraphics g, Minecraft mc, MapClient.Session s, float partial) {
         LocalPlayer p = mc.player;
@@ -132,6 +136,7 @@ public final class Minimap {
 
         g.flush();
         RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
         g.pose().popPose();
     }
 
@@ -150,6 +155,7 @@ public final class Minimap {
         Matrix4f m = g.pose().last().pose();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.enableBlend();
+        RenderSystem.disableCull();
         BufferBuilder buf = Tesselator.getInstance().getBuilder();
         buf.begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
         float[] xy = new float[2];
@@ -240,7 +246,12 @@ public final class Minimap {
         MapClient.Session s = MapClient.session;
         if (s == null) return "no map open";
         MapWorker w = s.worker;
-        return String.format("%.3f ms/frame, pending %d, colour %d, fill %d, load %d, up %d, gl %d/%d, tiles %d, coloured %d, unchanged %d, from disk %d",
-                MapClient.frameMillis, s.pending.size(), w.snapshotsWaiting(), w.fillsWaiting(), w.requestsWaiting(), w.uploadsWaiting(), s.textures.inUse(), s.textures.budget(), w.tilesHeld, w.chunksColoured, w.chunksUnchanged, w.tilesLoadedFromDisk);
+        Textures t = s.textures;
+        String line = String.format("%.3f ms/frame (draw %.3f), pending %d, colour %d, fill %d, load %d, up %d, gl %d/%d, tiles %d, coloured %d, unchanged %d, from disk %d, strip avg %d us max %d us, chunk copy avg %d us max %d us, worker: colour %d us, tile load %d us",
+                MapClient.frameMillis, drawMillis, s.pending.size(), w.snapshotsWaiting(), w.fillsWaiting(), w.requestsWaiting(), w.uploadsWaiting(), t.inUse(), t.budget(), w.tilesHeld, w.chunksColoured, w.chunksUnchanged, w.tilesLoadedFromDisk,
+                t.stripNanos / Math.max(1, t.strips) / 1000, t.slowestStrip / 1000, MapClient.copyNanos / Math.max(1, MapClient.snapshotsTaken) / 1000, MapClient.slowestCopy / 1000, w.colourNanos / Math.max(1, w.chunksColoured + w.chunksUnchanged) / 1000, w.loadNanos / Math.max(1, w.tilesLoaded) / 1000);
+        t.slowestStrip = 0;
+        MapClient.slowestCopy = 0;
+        return line;
     }
 }

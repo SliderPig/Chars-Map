@@ -121,10 +121,13 @@ public final class ClientChecks {
         });
         shot(160, "01_minimap_spawn");
 
-        measure(60, "map ON, standing still, render distance 8", 12);
-        later(1, () -> MapConfig.enabled = false);
-        measure(40, "map RESTING (same as no map), standing still", 12);
-        later(1, () -> MapConfig.enabled = true);
+        // Turn and turn about, so the world settling down doesn't favour either
+        for (int round = 1; round <= 2; round++) {
+            measure(round == 1 ? 80 : 40, "map ON, standing still, render distance 8, round " + round, 8);
+            later(1, () -> MapConfig.enabled = false);
+            measure(40, "map RESTING (same as no map), standing still, round " + round, 8);
+            later(1, () -> MapConfig.enabled = true);
+        }
 
         // Water
         later(40, () -> {

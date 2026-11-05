@@ -11,3 +11,4 @@ bin/
 .project
 .settings/
 __pycache__/
+run-build.log

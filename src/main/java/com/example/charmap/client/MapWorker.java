@@ -124,7 +124,7 @@ public final class MapWorker implements Runnable {
 
     // For the debug line
     public volatile int tilesHeld;
-    public volatile long chunksColoured, chunksUnchanged, tilesLoaded, tilesLoadedFromDisk;
+    public volatile long chunksColoured, chunksUnchanged, tilesLoaded, tilesLoadedFromDisk, colourNanos, loadNanos;
 
     public MapWorker(Path root, Registry<Biome> biomes) {
         this.root = root;
@@ -377,13 +377,17 @@ public final class MapWorker implements Runnable {
 
     private void colourLive(ChunkSnapshot s) {
         if (s.empty()) return;
+        long before = System.nanoTime();
         int hash = Colourer.fromSnapshot(s, colours, heights);
         store(s.layer, s.chunkX, s.chunkZ, hash, (int) (System.currentTimeMillis() / 1000), false);
+        colourNanos += System.nanoTime() - before;
     }
 
     private void colourFill(ChunkSummary s) {
+        long before = System.nanoTime();
         int hash = Colourer.fromSummary(s, biomes, colours, heights);
         store(0, s.chunkX, s.chunkZ, hash, s.stamp, true);
+        colourNanos += System.nanoTime() - before;
     }
 
     // The fresh colours of one chunk go into its tile, then up through the far levels.
@@ -501,6 +505,7 @@ public final class MapWorker implements Runnable {
 
     private Tile load(long key) {
         Path path = pathOf(key);
+        long before = System.nanoTime();
         byte[] file;
         try {
             file = Files.readAllBytes(path);
@@ -516,6 +521,7 @@ public final class MapWorker implements Runnable {
             else t.base = TileCodec.decodeBase(file);
             tilesLoaded++;
             tilesLoadedFromDisk++;
+            loadNanos += System.nanoTime() - before;
             return t;
         } catch (DataFormatException | RuntimeException e) {
             CharMap.once("tile-bad", "A map tile was damaged, it'll be remade: " + path, e);

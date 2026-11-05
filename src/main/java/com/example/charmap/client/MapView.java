@@ -52,6 +52,7 @@ public final class MapView {
 
         g.flush();
         RenderSystem.enableBlend();
+        RenderSystem.disableCull();
         RenderSystem.defaultBlendFunc();
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
         Matrix4f m = g.pose().last().pose();

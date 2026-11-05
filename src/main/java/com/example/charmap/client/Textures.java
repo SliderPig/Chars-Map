@@ -44,6 +44,7 @@ public final class Textures {
     private int currentRow;
 
     public int uploadedThisFrame;
+    public long stripNanos, strips, slowestStrip;
 
     public Textures(MapWorker worker) {
         this.worker = worker;
@@ -190,7 +191,12 @@ public final class Textures {
                 GlStateManager._pixelStore(GL11.GL_UNPACK_ROW_LENGTH, u.w);
                 GlStateManager._pixelStore(GL11.GL_UNPACK_SKIP_PIXELS, 0);
                 GlStateManager._pixelStore(GL11.GL_UNPACK_SKIP_ROWS, currentRow);
+                long before = System.nanoTime();
                 GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, u.x, u.y + currentRow, u.w, rows, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, u.pixels);
+                long took = System.nanoTime() - before;
+                stripNanos += took;
+                strips++;
+                slowestStrip = Math.max(slowestStrip, took);
                 currentRow += rows;
                 uploadedThisFrame++;
                 if (currentRow >= u.h) {

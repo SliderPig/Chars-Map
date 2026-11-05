@@ -53,11 +53,9 @@ def main():
     # A fresh game folder opens the first-launch narrator screen and waits forever otherwise.
     options = os.path.join(RUN, 'options.txt')
     lines = open(options, encoding='utf-8').read().splitlines() if os.path.exists(options) else []
-    lines = [line for line in lines if not line.startswith('onboardAccessibility:')] + ['onboardAccessibility:false']
+    lines = [line for line in lines if not line.startswith(('onboardAccessibility:', 'tutorialStep:'))] + ['onboardAccessibility:false', 'tutorialStep:none']
     with open(options, 'w', encoding='utf-8') as f:
-        f.write('
-'.join(lines) + '
-')
+        f.write(chr(10).join(lines) + chr(10))
     if not reopen and not fps:
         shutil.rmtree(os.path.join(RUN, 'saves', 'smoke'), ignore_errors=True)
         shutil.rmtree(os.path.join(RUN, 'charmap'), ignore_errors=True)

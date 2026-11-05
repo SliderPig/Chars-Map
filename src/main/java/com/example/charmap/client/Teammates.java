@@ -104,6 +104,7 @@ public final class Teammates {
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderTexture(0, skin);
         RenderSystem.enableBlend();
+        RenderSystem.disableCull();
         RenderSystem.defaultBlendFunc();
         BufferBuilder buf = Tesselator.getInstance().getBuilder();
         buf.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_TEX);

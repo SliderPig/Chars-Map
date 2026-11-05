@@ -35,6 +35,7 @@ public final class Filler {
     public static volatile String status = "";
     public static volatile boolean fromServer;
     private static volatile long serverLast;
+    private static long readNanos, waitNanos;
 
     private static int lastRegionX = Integer.MAX_VALUE, lastRegionZ;
     private static long nextAuto;
@@ -158,6 +159,8 @@ public final class Filler {
         }
         List<FillOrder.Region> regions = FillOrder.sorted(found, bx, bz, radius);
         regionsTotal = regions.size();
+        readNanos = 0;
+        waitNanos = 0;
         for (FillOrder.Region r : regions) {
             if (stopAsked) break;
             int[] stamps = null;
@@ -171,7 +174,7 @@ public final class Filler {
         }
         if (loud || chunksDone > 0) {
             long ms = Math.max(1, System.currentTimeMillis() - startedAt);
-            CharMap.LOG.info("[CharMap] fill finished: {} regions, {} new chunks in {} ms ({} chunks a second)", regionsDone, chunksDone, ms, chunksDone * 1000L / ms);
+            CharMap.LOG.info("[CharMap] fill finished: {} regions, {} new chunks in {} ms ({} chunks a second; {} ms reading, {} ms waiting for the map or easing off)", regionsDone, chunksDone, ms, chunksDone * 1000L / ms, readNanos / 1_000_000L, waitNanos / 1_000_000L);
         }
     }
 
@@ -189,12 +192,15 @@ public final class Filler {
             int stamp = mca.timestamp(index);
             if (stamps != null && stamps[index] != 0 && stamp <= stamps[index]) continue; // nothing new since the map last had it
             try {
+                long t0 = System.nanoTime();
                 byte[] data = mca.chunk(index);
                 if (data == null) continue;
                 Map<String, Object> root = Nbt.read(data);
                 ChunkSummary s = ChunkSummary.from(root, ceiling);
                 if (s == null) continue;
                 s.stamp = stamp == 0 ? 1 : stamp;
+                long t1 = System.nanoTime();
+                readNanos += t1 - t0;
                 while (worker.fillsWaiting() > 48 && !stopAsked) Thread.sleep(1);
                 worker.addFill(s);
                 chunksDone++;
@@ -202,6 +208,7 @@ public final class Filler {
                 int fps = Minecraft.getInstance().getFps();
                 if (fps < 20) Thread.sleep(12);
                 else if (fps < 40) Thread.sleep(3);
+                waitNanos += System.nanoTime() - t1;
             } catch (IOException | RuntimeException e) {
                 CharMap.once("fill-chunk", "Skipped a chunk that couldn't be read, it may be mid-save", e);
             }

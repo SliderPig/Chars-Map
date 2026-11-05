@@ -94,6 +94,7 @@ public final class MapScreen extends Screen {
         }
         g.flush();
         RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
         g.pose().popPose();
     }
 
