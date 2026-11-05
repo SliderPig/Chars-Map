@@ -27,7 +27,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.biome.Biome;
@@ -294,6 +293,7 @@ public final class ClientChecks {
     public static void onTick(TickEvent.ClientTickEvent e) {
         if (!ON || e.phase != TickEvent.Phase.END) return;
         Minecraft mc = Minecraft.getInstance();
+        if (mc.screen instanceof net.minecraft.client.gui.screens.AccessibilityOnboardingScreen) mc.setScreen(new TitleScreen());
         if (titleSeen && !created) {
             created = true;
             mc.options.pauseOnLostFocus = false;
@@ -326,9 +326,5 @@ public final class ClientChecks {
                 CharMap.LOG.error("[Check] step failed", t);
             }
         }
-    }
-
-    public static Level unused() {
-        return null;
     }
 }

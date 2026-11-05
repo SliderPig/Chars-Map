@@ -50,6 +50,14 @@ def main():
     cp.append(os.path.join(META, 'versions', VERSION, VERSION + '.jar'))
 
     os.makedirs(os.path.join(RUN, 'mods'), exist_ok=True)
+    # A fresh game folder opens the first-launch narrator screen and waits forever otherwise.
+    options = os.path.join(RUN, 'options.txt')
+    lines = open(options, encoding='utf-8').read().splitlines() if os.path.exists(options) else []
+    lines = [line for line in lines if not line.startswith('onboardAccessibility:')] + ['onboardAccessibility:false']
+    with open(options, 'w', encoding='utf-8') as f:
+        f.write('
+'.join(lines) + '
+')
     if not reopen and not fps:
         shutil.rmtree(os.path.join(RUN, 'saves', 'smoke'), ignore_errors=True)
         shutil.rmtree(os.path.join(RUN, 'charmap'), ignore_errors=True)

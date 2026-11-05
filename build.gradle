@@ -35,6 +35,20 @@ minecraft {
 // gradlew build -Psmoke -x test: adds src/smoke, the walk through the real game that tools/run_real_client.py starts. Never part of the normal jar.
 if (project.hasProperty('smoke')) {
     sourceSets.main.java.srcDir 'src/smoke/java'
+    sourceSets.main.resources.srcDir 'src/smoke/resources'
+    // gradlew runGameTestServer -Psmoke: a real dedicated server with this mod, proves it starts without a PC's code and reads real saves
+    minecraft.runs {
+        gameTestServer {
+            workingDirectory project.file('run-smoke')
+            property 'forge.enabledGameTestNamespaces', 'charmap'
+            property 'forge.logging.console.level', 'info'
+            mods {
+                charmap {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
 }
 
 dependencies {
