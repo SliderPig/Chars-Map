@@ -307,6 +307,7 @@ public final class MapScreen extends Screen {
             float qr = pillH / 2, qx = x + qr;
             boolean overHelp = Math.hypot(mouseX - qx, mouseY - (y + qr)) <= qr;
             Ui.pill(g, null, qx - qr, y, qx + qr, y + pillH, "?", overHelp, mouseX, mouseY, () -> {});
+            x = qx + qr + 3 * k;
             if (overHelp) {
                 String[] lines = {"Mobs and players only show where the game has them loaded,", "which is near you. Teammates further away show as faces.", "Far from you the land is still there, just without anyone on it."};
                 float wide = 0;

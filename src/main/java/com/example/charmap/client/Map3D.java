@@ -170,7 +170,7 @@ public final class Map3D {
             int bx = (int) Math.floor(targetX), bz = (int) Math.floor(targetZ);
             LevelChunk chunk = mc.level.getChunkSource().getChunkNow(bx >> 4, bz >> 4);
             if (chunk != null) {
-                int h = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, bx & 15, bz & 15);
+                int h = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, bx & 15, bz & 15);
                 targetY += (h - targetY) * Math.min(1f, dt * 4);
             }
         }
@@ -346,7 +346,7 @@ public final class Map3D {
         pose.last().pose().set(view);
         pose.last().normal().set(new Matrix3f(view));
         // Further out they're a bit bigger than life, so you can still tell what they are.
-        float big = MapConfig.mobs3d == 2 ? Math.max(1f, Math.min(3f, distance / 90f)) : 1f;
+        float big = MapConfig.mobs3d == 2 ? Math.max(1f, Math.min(2.5f, distance / 130f)) : 1f;
         try {
             for (Entity e : mobs) {
                 if (e.isRemoved()) continue;
