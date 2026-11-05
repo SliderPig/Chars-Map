@@ -105,11 +105,13 @@ public final class VoxelWorker implements Runnable {
 
     // ---- From the main thread ----
 
-    public void capture(ChunkSnapshot s) {
-        if (captureCount.get() >= 48) return; // busy: the next look at this chunk will do
+    // False when it's busy: try again later.
+    public boolean capture(ChunkSnapshot s) {
+        if (captureCount.get() >= 48) return false;
         captures.add(s);
         captureCount.incrementAndGet();
         LockSupport.unpark(thread);
+        return true;
     }
 
     public void setWanted(long[] patchKeys, boolean serverHasMod) {
@@ -174,8 +176,10 @@ public final class VoxelWorker implements Runnable {
         boolean did = false;
         Long gone;
         while ((gone = forget.poll()) != null) built.remove((long) gone);
-        ChunkSnapshot s = captures.poll();
-        if (s != null) {
+        // What's loaded right now comes before building anything: a model built without it would only have to be built again.
+        for (int i = 0; i < 16; i++) {
+            ChunkSnapshot s = captures.poll();
+            if (s == null) break;
             captureCount.decrementAndGet();
             if (!s.empty()) took(VoxelData.from(s), true);
             did = true;
@@ -219,7 +223,7 @@ public final class VoxelWorker implements Runnable {
         put(key, d);
         if (old == null || old.hash != d.hash) {
             built.remove(patchOf(d.chunkX, d.chunkZ));
-            if (live && !host && keep && (old != null || !Files.exists(pathOf(d.chunkX, d.chunkZ)) || true)) {
+            if (live && !host && keep) {
                 try {
                     toDisk(d.toChunk(biomes));
                 } catch (Throwable t) {

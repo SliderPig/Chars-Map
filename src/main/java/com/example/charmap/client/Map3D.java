@@ -459,9 +459,10 @@ public final class Map3D {
             for (int z = 0; z < 4; z++) {
                 for (int x = 0; x < 4; x++) {
                     long c = ChunkPos.asLong(cx0 + x, cz0 + z);
-                    if (!captured.add(c)) continue;
+                    if (captured.contains(c)) continue;
                     LevelChunk chunk = mc.level.getChunkSource().getChunkNow(cx0 + x, cz0 + z);
-                    if (chunk != null && !chunk.isEmpty()) s.voxels.capture(ChunkSnapshot.surface(chunk));
+                    if (chunk != null && !chunk.isEmpty() && !s.voxels.capture(ChunkSnapshot.surface(chunk))) return; // its queue is full: next frame
+                    captured.add(c);
                     if (System.nanoTime() - start > CAPTURE_BUDGET) return;
                 }
             }

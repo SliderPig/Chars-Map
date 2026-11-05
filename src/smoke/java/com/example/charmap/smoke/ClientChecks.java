@@ -413,6 +413,10 @@ public final class ClientChecks {
             });
         });
         later(300, () -> {
+            var server = mc.getSingleplayerServer();
+            server.execute(() -> server.saveEverything(true, true, true));
+        });
+        later(60, () -> {
             MapScreen m = new MapScreen();
             mc.setScreen(m);
             m.set3D(true);
