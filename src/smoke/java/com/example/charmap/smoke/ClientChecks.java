@@ -392,7 +392,7 @@ public final class ClientChecks {
             if (mc.player != null) m.showAt(mc.player.getX(), mc.player.getZ(), 0.25f);
         });
         shot(100, "s2_map_filling_from_server");
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 6; i++) {
             later(100, () -> CharMap.LOG.info("[Check] from the server so far: {} chunks, {} of {} regions, {} chunks a second. {}", Filler.chunksDone, Filler.regionsDone, Filler.regionsTotal, Math.round(Filler.speed()), Minimap.debugLine()));
         }
         shot(1, "s3_map_filled_from_server");

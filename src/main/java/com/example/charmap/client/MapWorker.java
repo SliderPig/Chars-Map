@@ -273,7 +273,8 @@ public final class MapWorker implements Runnable {
                     Files.walkFileTree(root, new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                            if (file.getFileName().toString().endsWith(".cmt")) Files.deleteIfExists(file);
+                            String name = file.getFileName().toString();
+                            if (name.endsWith(".cmt") || name.equals("server_fill.txt")) Files.deleteIfExists(file);
                             return FileVisitResult.CONTINUE;
                         }
                     });

@@ -35,7 +35,7 @@ Everything underneath:
 
 ## On a server
 
-Put the same jar on the server. Players with the mod then get a summary of every generated chunk (block names and heights, a few hundred bytes a chunk) automatically, nearest first, so their map fills in without walking anywhere. The server reads its save files on its own low-priority thread, never loads a chunk and never touches the main thread for it. Players without the mod notice nothing.
+Put the same jar on the server. Players with the mod then get a summary of every generated chunk (block names and heights, about 2 KB a chunk) automatically, nearest first, so their map fills in without walking anywhere. It remembers per player how far it got, so a big world carries on over several sessions (in `<world>/charmap-progress`). The server reads its save files on its own low-priority thread, never loads a chunk and never touches the main thread for it. Players without the mod notice nothing.
 
 `config/charmap-server.properties`: `enabled` (default true), `opsOnly` (default false: it does show the map of parts nobody has walked, so set this if that matters to you), `kilobytesPerSecond` per player (default 128), `playersAtOnce` (default 3).
 

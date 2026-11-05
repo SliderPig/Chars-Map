@@ -282,6 +282,7 @@ public final class Filler {
                 break;
             case Net.REPLY_STARTED:
                 regionsTotal = total;
+                if (s != null) rememberServerFill(s, System.currentTimeMillis() / 1000);
                 CharMap.LOG.info("[CharMap] server is sending {} regions", total);
                 break;
             case Net.REPLY_BUSY:

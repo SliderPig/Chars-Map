@@ -255,7 +255,14 @@ public final class ChunkSummary {
         for (String s : blocks) out.writeUTF(s);
         out.writeByte(biomes.length);
         for (String s : biomes) out.writeUTF(s);
-        for (short[] a : new short[][] {top, below, topY, belowY}) for (short v : a) out.writeShort(v);
+        for (short v : top) out.writeShort(v);
+        for (short v : below) out.writeShort(v);
+        short last = 0;
+        for (short v : topY) {
+            out.writeShort(v - last);
+            last = v;
+        }
+        for (int i = 0; i < 256; i++) out.writeShort(topY[i] - belowY[i]);
         out.write(biome);
     }
 
@@ -268,7 +275,14 @@ public final class ChunkSummary {
         for (int i = 0; i < s.blocks.length; i++) s.blocks[i] = in.readUTF();
         s.biomes = new String[in.readUnsignedByte()];
         for (int i = 0; i < s.biomes.length; i++) s.biomes[i] = in.readUTF();
-        for (short[] a : new short[][] {s.top, s.below, s.topY, s.belowY}) for (int i = 0; i < 256; i++) a[i] = in.readShort();
+        for (int i = 0; i < 256; i++) s.top[i] = in.readShort();
+        for (int i = 0; i < 256; i++) s.below[i] = in.readShort();
+        short last = 0;
+        for (int i = 0; i < 256; i++) {
+            last = (short) (last + in.readShort());
+            s.topY[i] = last;
+        }
+        for (int i = 0; i < 256; i++) s.belowY[i] = (short) (s.topY[i] - in.readShort());
         in.readFully(s.biome);
         return s;
     }

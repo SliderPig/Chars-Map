@@ -85,8 +85,13 @@ def main():
         print('server up after', round(time.time() - started), 's:', ready)
         if not ready:
             return 1
-        client = subprocess.run([sys.executable, 'tools/run_real_client.py', f'join=localhost:{PORT}'], capture_output=True, text=True, timeout=300)
-        print(client.stdout[-400:])
+        for visit in range(2):
+            client = subprocess.run([sys.executable, 'tools/run_real_client.py', f'join=localhost:{PORT}'], capture_output=True, text=True, timeout=240)
+            print('visit', visit + 1, client.stdout[-120:])
+            log_file = os.path.join('run-real', 'logs', 'latest.log')
+            with open(log_file, encoding='utf-8', errors='replace') as f:
+                found = [line.split(': ', 1)[-1][:120] for line in f if 'from the server so far' in line or 'server fill finished' in line or 'server is sending' in line]
+            print('\n'.join(found[:1] + found[-2:]))
         # Give the last lines a moment, then stop properly.
         server.stdin.write('stop\n')
         server.stdin.flush()

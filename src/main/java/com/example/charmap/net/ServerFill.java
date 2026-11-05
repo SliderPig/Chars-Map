@@ -2,6 +2,7 @@ package com.example.charmap.net;
 
 import com.example.charmap.CharMap;
 import com.example.charmap.model.ChunkSummary;
+import com.example.charmap.model.Coords;
 import com.example.charmap.model.FillOrder;
 import com.example.charmap.model.McaFile;
 import com.example.charmap.model.Nbt;
@@ -11,6 +12,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -142,6 +144,9 @@ public final class ServerFill {
         }
         List<FillOrder.Region> regions = FillOrder.sorted(found, bx, bz, 0);
         int total = regions.size();
+        Path progressFile = server.getWorldPath(LevelResource.ROOT).resolve("charmap-progress").resolve(player.getUUID() + "_" + Coords.safeName(dimension.replace(':', '_')) + ".txt");
+        // "since" 0 means the player's map has nothing: everything goes again.
+        Map<String, Integer> progress = since <= 0 ? new HashMap<>() : loadProgress(progressFile);
         long startedAt = System.currentTimeMillis() / 1000;
         server.execute(() -> send(player, new Net.FillReply(Net.REPLY_STARTED, total, 0)));
         int done = 0;
@@ -156,11 +161,13 @@ public final class ServerFill {
                 done++;
                 continue;
             }
+            int sentUpTo = progress.getOrDefault(r.file(), 0);
+            int nowStamp = (int) (System.currentTimeMillis() / 1000);
             for (int index : FillOrder.chunks(r.x(), r.z(), bx, bz)) {
                 if (job.stop || player.hasDisconnected()) return;
                 if (!mca.has(index)) continue;
                 int stamp = mca.timestamp(index);
-                if (stamp <= since) continue;
+                if (stamp <= sentUpTo) continue;
                 try {
                     byte[] data = mca.chunk(index);
                     if (data == null) continue;
@@ -176,9 +183,37 @@ public final class ServerFill {
                 }
             }
             done++;
+            if (!batch.isEmpty()) flush(batch, player, server, dimension, done, total, bytesPerSecond);
+            progress.put(r.file(), nowStamp);
+            saveProgress(progressFile, progress);
         }
-        if (!batch.isEmpty()) flush(batch, player, server, dimension, done, total, bytesPerSecond);
         server.execute(() -> send(player, new Net.FillReply(Net.REPLY_DONE, total, startedAt)));
+    }
+
+    private static Map<String, Integer> loadProgress(Path file) {
+        Map<String, Integer> out = new HashMap<>();
+        try {
+            if (Files.exists(file)) {
+                for (String line : Files.readAllLines(file)) {
+                    int gap = line.indexOf(' ');
+                    if (gap > 0) out.put(line.substring(0, gap), Integer.parseInt(line.substring(gap + 1).trim()));
+                }
+            }
+        } catch (IOException | RuntimeException e) {
+            CharMap.once("server-progress-read", "Couldn't read how far a map fill got, starting again", e);
+        }
+        return out;
+    }
+
+    private static void saveProgress(Path file, Map<String, Integer> progress) {
+        try {
+            Files.createDirectories(file.getParent());
+            List<String> lines = new ArrayList<>();
+            for (Map.Entry<String, Integer> e : progress.entrySet()) lines.add(e.getKey() + " " + e.getValue());
+            Files.write(file, lines);
+        } catch (IOException | RuntimeException e) {
+            CharMap.once("server-progress-write", "Couldn't note how far a map fill got", e);
+        }
     }
 
     private static void flush(List<ChunkSummary> batch, ServerPlayer player, MinecraftServer server, String dimension, int done, int total, int bytesPerSecond) throws IOException, InterruptedException {

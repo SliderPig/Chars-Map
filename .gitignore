@@ -12,3 +12,4 @@ bin/
 .settings/
 __pycache__/
 run-build.log
+run-gametest.log
