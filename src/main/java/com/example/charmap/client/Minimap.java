@@ -147,17 +147,12 @@ public final class Minimap {
         RenderSystem.disableDepthTest();
         RenderSystem.setShaderColor(1, 1, 1, 1);
 
-        // Soft shadow, dark bed
-        Ui.begin(g);
-        Ui.band(g, cx, cy + 2, shape, shadow, 0x66000000, 0);
-        Ui.polygon(g, cx, cy, shape, null, (Math.round(MapConfig.opacity * 255) << 24) | (Ui.PLUM_DARK & 0xFFFFFF));
-        Ui.end(g);
-
         drawPicture(g, cx, cy, px, pz, ppb, rotation);
         if (!MapClient.firstPixelsLogged) checkFirstPixels(s, px, pz, ppb);
 
-        // Ring: a dark edge then a thin pink line, feathered so a circle stays round at any size.
+        // Soft shadow round it, then the ring: a dark edge and a thin pink line, feathered so a circle stays round at any size.
         Ui.begin(g);
+        Ui.band(g, cx, cy + 2, shape, shadow, 0x66000000, 0);
         Ui.band(g, cx, cy, innerEdge, shape, 0x00000000, 0x55000000);
         Ui.band(g, cx, cy, shape, ringOuter, Ui.PINK, Ui.PINK);
         Ui.band(g, cx, cy, ringOuter, ringFeather, Ui.PINK, Ui.PINK & 0xFFFFFF);

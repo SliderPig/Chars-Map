@@ -51,7 +51,8 @@ final class MinimapCache {
         if (target == null || side != wantSide) {
             if (target != null) target.destroyBuffers();
             target = new TextureTarget(wantSide, wantSide, false, Minecraft.ON_OSX);
-            target.setClearColor(0, 0, 0, 0);
+            // Parts nobody has seen are the dark bed of the map, part of the picture so there's nothing extra to draw under it.
+            target.setClearColor((Ui.PLUM_DARK >> 16 & 255) / 255f, (Ui.PLUM_DARK >> 8 & 255) / 255f, (Ui.PLUM_DARK & 255) / 255f, 1f);
             side = wantSide;
             remake = true;
         }
