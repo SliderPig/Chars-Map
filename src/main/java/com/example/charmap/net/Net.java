@@ -26,7 +26,7 @@ public final class Net {
 
     public record FillReply(int code, int total, long when) {}
 
-    public record FillChunks(byte[] packed, int done, int total) {}
+    public record FillChunks(byte[] packed, int done, int total, String dimension) {}
 
     public static void register() {
         int id = 0;
@@ -50,8 +50,9 @@ public final class Net {
                     b.writeByteArray(m.packed());
                     b.writeInt(m.done());
                     b.writeInt(m.total());
+                    b.writeUtf(m.dimension());
                 },
-                b -> new FillChunks(readBytes(b), b.readInt(), b.readInt()),
+                b -> new FillChunks(readBytes(b), b.readInt(), b.readInt(), b.readUtf(256)),
                 Net::onChunks);
     }
 
@@ -87,7 +88,7 @@ public final class Net {
         static void chunks(FillChunks m) {
             try {
                 List<ChunkSummary> list = ChunkSummary.unpackAll(m.packed());
-                com.example.charmap.client.Filler.onServerChunks(list, m.done(), m.total());
+                com.example.charmap.client.Filler.onServerChunks(list, m.done(), m.total(), m.dimension());
             } catch (IOException | RuntimeException e) {
                 CharMap.once("fill-packet", "A map packet from the server couldn't be read", e);
             }

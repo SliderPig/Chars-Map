@@ -260,9 +260,9 @@ public final class Filler {
 
     // ---- From the server (network thread) ----
 
-    public static void onServerChunks(List<ChunkSummary> chunks, int done, int total) {
+    public static void onServerChunks(List<ChunkSummary> chunks, int done, int total, String dimension) {
         MapClient.Session s = MapClient.session;
-        if (s == null || !fromServer) return;
+        if (s == null || !fromServer || !s.dimension.equals(dimension)) return; // on its way when you changed dimension
         serverLast = System.currentTimeMillis();
         regionsDone = done;
         regionsTotal = total;
@@ -286,6 +286,7 @@ public final class Filler {
                 break;
             case Net.REPLY_BUSY:
                 fromServer = false;
+                nextAuto = System.currentTimeMillis() + 60_000; // someone else's turn: ask again in a minute
                 if (loudServerFill) say("The server is already sending maps to other players, try again in a bit.");
                 break;
             case Net.REPLY_DONE:

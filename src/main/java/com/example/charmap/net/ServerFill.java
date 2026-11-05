@@ -78,6 +78,7 @@ public final class ServerFill {
         ServerLevel level = player.serverLevel();
         MinecraftServer server = player.getServer();
         Path dir = regionFolder(level, server);
+        String dimension = level.dimension().location().toString();
         int bx = player.getBlockX(), bz = player.getBlockZ();
         int ceiling = level.dimensionType().hasCeiling() ? Math.min(level.dimensionType().logicalHeight() + level.getMinBuildHeight(), level.getMaxBuildHeight()) - 1 : Integer.MIN_VALUE;
         Job job = new Job();
@@ -85,7 +86,7 @@ public final class ServerFill {
         int bytesPerSecond = rate * 1024;
         Thread t = new Thread(() -> {
             try {
-                run(job, player, server, dir, bx, bz, ceiling, since, bytesPerSecond);
+                run(job, player, server, dir, dimension, bx, bz, ceiling, since, bytesPerSecond);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } catch (Throwable e) {
@@ -129,7 +130,7 @@ public final class ServerFill {
         Net.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), message);
     }
 
-    private static void run(Job job, ServerPlayer player, MinecraftServer server, Path dir, int bx, int bz, int ceiling, long since, int bytesPerSecond) throws IOException, InterruptedException {
+    private static void run(Job job, ServerPlayer player, MinecraftServer server, Path dir, String dimension, int bx, int bz, int ceiling, long since, int bytesPerSecond) throws IOException, InterruptedException {
         List<FillOrder.Region> found = new ArrayList<>();
         if (Files.isDirectory(dir)) {
             try (DirectoryStream<Path> files = Files.newDirectoryStream(dir, "r.*.mca")) {
@@ -171,20 +172,20 @@ public final class ServerFill {
                     continue; // caught mid-save: it'll come on the next fill
                 }
                 if (batch.size() >= 32) {
-                    flush(batch, player, server, done, total, bytesPerSecond);
+                    flush(batch, player, server, dimension, done, total, bytesPerSecond);
                 }
             }
             done++;
         }
-        if (!batch.isEmpty()) flush(batch, player, server, done, total, bytesPerSecond);
+        if (!batch.isEmpty()) flush(batch, player, server, dimension, done, total, bytesPerSecond);
         server.execute(() -> send(player, new Net.FillReply(Net.REPLY_DONE, total, startedAt)));
     }
 
-    private static void flush(List<ChunkSummary> batch, ServerPlayer player, MinecraftServer server, int done, int total, int bytesPerSecond) throws IOException, InterruptedException {
+    private static void flush(List<ChunkSummary> batch, ServerPlayer player, MinecraftServer server, String dimension, int done, int total, int bytesPerSecond) throws IOException, InterruptedException {
         byte[] packed = ChunkSummary.packAll(new ArrayList<>(batch));
         batch.clear();
         int d = done;
-        server.execute(() -> send(player, new Net.FillChunks(packed, d, total)));
+        server.execute(() -> send(player, new Net.FillChunks(packed, d, total, dimension)));
         Thread.sleep(Math.max(20, packed.length * 1000L / bytesPerSecond));
     }
 }
