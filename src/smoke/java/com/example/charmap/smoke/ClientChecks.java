@@ -477,7 +477,21 @@ public final class ClientChecks {
             later(100, () -> CharMap.LOG.info("[Check] from the server so far: {} chunks, {} of {} regions, {} chunks a second. {}", Filler.chunksDone, Filler.regionsDone, Filler.regionsTotal, Math.round(Filler.speed()), Minimap.debugLine()));
         }
         shot(1, "s3_map_filled_from_server");
-        later(1, () -> mc.setScreen(null));
+        // The 3D view on a server: its real blocks come from the server or from what's loaded.
+        later(1, () -> {
+            if (mc.screen instanceof MapScreen m && mc.player != null) {
+                m.set3D(true);
+                m.view3d().look(mc.player.getX(), mc.player.getY(), mc.player.getZ(), 120);
+            }
+        });
+        later(300, () -> {
+            if (mc.screen instanceof MapScreen m) CharMap.LOG.info("[Check] 3D on the server: {} block patches, {} MB, meshes {}, chunks read {}", m.view3d().blocksDrawnLast, m.view3d().blockMemoryBytes() / 1048576, MapClient.session.voxels.meshes, MapClient.session.voxels.chunksRead);
+        });
+        shot(1, "s4_3d_on_the_server");
+        later(1, () -> {
+            if (mc.screen instanceof MapScreen m) m.set3D(false);
+            mc.setScreen(null);
+        });
         later(20, () -> mc.level.disconnect());
         later(40, () -> mc.stop());
     }
