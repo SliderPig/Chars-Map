@@ -21,7 +21,9 @@ public final class MapConfig {
     public static float opacity = 1f;
     public static int zoom = 2;             // index into ZOOMS
     public static boolean rotate = false;
-    public static boolean dots = true;
+    public static boolean dots = true;      // mobs and players on the maps at all
+    public static boolean icons = true;     // their faces instead of plain dots
+    public static boolean playerNames = true;
     public static boolean infoText = true;
     public static boolean compass = true;
     public static boolean fillEnabled = true;
@@ -61,6 +63,8 @@ public final class MapConfig {
         zoom = number(p, "zoom", zoom, 0, ZOOMS.length - 1);
         rotate = bool(p, "rotate", rotate);
         dots = bool(p, "dots", dots);
+        icons = bool(p, "icons", icons);
+        playerNames = bool(p, "playerNames", playerNames);
         infoText = bool(p, "infoText", infoText);
         compass = bool(p, "compass", compass);
         fillEnabled = bool(p, "fill", fillEnabled);
@@ -83,6 +87,8 @@ public final class MapConfig {
         p.setProperty("zoom", "" + zoom);
         p.setProperty("rotate", "" + rotate);
         p.setProperty("dots", "" + dots);
+        p.setProperty("icons", "" + icons);
+        p.setProperty("playerNames", "" + playerNames);
         p.setProperty("infoText", "" + infoText);
         p.setProperty("compass", "" + compass);
         p.setProperty("fill", "" + fillEnabled);

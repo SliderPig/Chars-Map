@@ -40,15 +40,18 @@ public final class MapWorker implements Runnable {
         public final long key;
         public final int x, y, w, h;
         public final int[] pixels;
+        public final int offset, stride; // where the first row starts in pixels, and how far apart rows are
         public final boolean full, empty;
 
-        Upload(long key, int x, int y, int w, int h, int[] pixels, boolean full, boolean empty) {
+        Upload(long key, int x, int y, int w, int h, int[] pixels, int offset, int stride, boolean full, boolean empty) {
             this.key = key;
             this.x = x;
             this.y = y;
             this.w = w;
             this.h = h;
             this.pixels = pixels;
+            this.offset = offset;
+            this.stride = stride;
             this.full = full;
             this.empty = empty;
         }
@@ -314,7 +317,7 @@ public final class MapWorker implements Runnable {
     private void serve(long key) {
         Tile t = tile(key, false);
         if (t == null) {
-            post(new Upload(key, 0, 0, 0, 0, null, false, true));
+            post(new Upload(key, 0, 0, 0, 0, null, 0, 0, false, true));
             return;
         }
         sendWhole(t);
@@ -337,7 +340,24 @@ public final class MapWorker implements Runnable {
         }
         t.dirtyX0 = Integer.MAX_VALUE;
         dirtyForUpload.remove(t.key);
-        post(new Upload(t.key, 0, 0, n, n, out, true, false));
+        // Only the box that has anything in it. A tile with a few chunks on it goes in a few rows, not 512.
+        int x0 = n, y0 = n, x1 = -1, y1 = -1;
+        for (int y = 0, i = 0; y < n; y++) {
+            for (int x = 0; x < n; x++, i++) {
+                if (out[i] != 0) {
+                    if (x < x0) x0 = x;
+                    if (x > x1) x1 = x;
+                    if (y < y0) y0 = y;
+                    y1 = y;
+                }
+            }
+        }
+        if (x1 < 0) {
+            giveBack(out);
+            post(new Upload(t.key, 0, 0, 0, 0, null, 0, 0, false, true));
+            return;
+        }
+        post(new Upload(t.key, x0, y0, x1 - x0 + 1, y1 - y0 + 1, out, y0 * n + x0, n, true, false));
     }
 
     private void post(Upload u) {
@@ -369,7 +389,7 @@ public final class MapWorker implements Runnable {
             for (int y = 0, o = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) out[o++] = t.pixel(t.dirtyX0 + x, t.dirtyY0 + y);
             }
-            post(new Upload(key, t.dirtyX0, t.dirtyY0, w, h, out, false, false));
+            post(new Upload(key, t.dirtyX0, t.dirtyY0, w, h, out, 0, w, false, false));
             t.dirtyX0 = Integer.MAX_VALUE;
             sent++;
         }

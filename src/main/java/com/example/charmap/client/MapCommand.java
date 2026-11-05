@@ -29,6 +29,11 @@ final class MapCommand {
                     say("This dimension's map is cleared. It will fill back in from what you see.");
                     return 1;
                 }))
+                .then(Commands.literal("faces").executes(c -> {
+                    Icons.forgetDisk();
+                    say("Mob faces forgotten: they'll be pictured again as you see them.");
+                    return 1;
+                }))
                 .then(Commands.literal("debug").executes(c -> {
                     MapConfig.debug = !MapConfig.debug;
                     MapConfig.save();

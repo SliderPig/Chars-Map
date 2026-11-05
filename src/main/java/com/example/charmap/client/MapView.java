@@ -8,7 +8,6 @@ import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
 import org.joml.Matrix4f;
 
@@ -18,7 +17,7 @@ public final class MapView {
     private MapView() {}
 
     // shape: outline on screen, x,y pairs around centreX,centreY. worldX,worldZ: the block at that centre.
-    public static void draw(GuiGraphics g, Textures tex, int layer, float[] shape, float centreX, float centreY, double worldX, double worldZ, float pixelsPerBlock, float rotation, float alpha, int budget) {
+    public static void draw(Matrix4f m, Textures tex, int layer, float[] shape, float centreX, float centreY, double worldX, double worldZ, float pixelsPerBlock, float rotation, float alpha, int budget) {
         // The outline in blocks, measured from worldX,worldZ. Small numbers stay exact in a float, however far you've walked.
         float[] world = new float[shape.length];
         float cos = (float) Math.cos(-rotation), sin = (float) Math.sin(-rotation);
@@ -50,12 +49,12 @@ public final class MapView {
             for (int z = cz0; z <= cz1; z++) for (int x = cx0; x <= cx1; x++) tex.need(Coords.key(layer, coarse, x, z));
         }
 
-        g.flush();
         RenderSystem.enableBlend();
-        RenderSystem.disableCull();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.disableCull();
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
-        Matrix4f m = g.pose().last().pose();
+        float cosR = (float) Math.cos(rotation), sinR = (float) Math.sin(rotation);
+        int a = Math.round(alpha * 255);
         for (int tz = tz0; tz <= tz1; tz++) {
             for (int tx = tx0; tx <= tx1; tx++) {
                 Textures.Gl gl = tex.need(Coords.key(layer, level, tx, tz));
@@ -83,8 +82,6 @@ public final class MapView {
 
                 BufferBuilder buf = Tesselator.getInstance().getBuilder();
                 buf.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_TEX_COLOR);
-                int a = Math.round(alpha * 255);
-                float cosR = (float) Math.cos(rotation), sinR = (float) Math.sin(rotation);
                 for (int i = 0; i < cut.length; i += 2) {
                     float bx = cut[i], bz = cut[i + 1];
                     float sx = centreX + (bx * cosR - bz * sinR) * w, sy = centreY + (bx * sinR + bz * cosR) * w;

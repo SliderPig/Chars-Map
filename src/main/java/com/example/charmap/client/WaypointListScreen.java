@@ -46,6 +46,7 @@ public final class WaypointListScreen extends Screen {
         Ui.toRealPixels(g);
         RenderSystem.disableDepthTest();
         g.fill(0, 0, w, h, 0x70000000);
+        Ui.begin(g);
 
         float pw = Math.min(w - 20f, 280 * k), ph = Math.min(h - 20f, 190 * k);
         float x0 = w / 2f - pw / 2, y0 = h / 2f - ph / 2, pad = 7 * k;
@@ -61,20 +62,23 @@ public final class WaypointListScreen extends Screen {
 
         LocalPlayer p = mc.player;
         MapClient.Session s = MapClient.session;
-        g.flush();
+        Ui.end(g);
         RenderSystem.enableScissor((int) x0, (int) (h - bottom), (int) pw, (int) (bottom - top));
+        Ui.begin(g);
         float y = top - scroll;
         for (Waypoint wp : list) {
             if (y + rowH >= top && y <= bottom) drawRow(g, wp, x0 + pad, y, pw - pad * 2, rowH, k, line, top, bottom, p, s);
             y += rowH + gap;
         }
-        g.flush();
+        Ui.end(g);
         RenderSystem.disableScissor();
 
+        Ui.begin(g);
         float by = y0 + ph - pad - rowH, bw = (pw - pad * 2 - 3 * k) / 2;
         Ui.pill(g, hits, x0 + pad, by, x0 + pad + bw, by + rowH, "Add here", true, mouseX, mouseY, () -> mc.setScreen(WaypointScreen.newHere(this)));
         Ui.pill(g, hits, x0 + pad + bw + 3 * k, by, x0 + pad + bw * 2 + 3 * k, by + rowH, "Done", false, mouseX, mouseY, this::onClose);
 
+        Ui.end(g);
         g.flush();
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
@@ -95,7 +99,6 @@ public final class WaypointListScreen extends Screen {
         float buttons = 62 * k;
         float infoW = Ui.width(info);
         Ui.text(g, info, x + w - buttons - infoW - 4 * k, cy - line / 2 + 1, Ui.TEXT_DIM);
-        g.flush();
         float bh = h - 3 * k, by = y + 1.5f * k;
         boolean clickable = cy > top && cy < bottom;
         Ui.pill(g, clickable ? hits : null, x + w - buttons, by, x + w - buttons / 2 - 1 * k, by + bh, wp.shown ? "Shown" : "Hidden", wp.shown, mouseX, mouseY, () -> {

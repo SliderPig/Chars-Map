@@ -20,7 +20,7 @@ public final class Net {
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(new ResourceLocation(CharMap.MODID, "main"), () -> "1", NetworkRegistry.acceptMissingOr("1"), NetworkRegistry.acceptMissingOr("1"));
 
-    public static final int REPLY_REFUSED = 0, REPLY_STARTED = 1, REPLY_DONE = 2;
+    public static final int REPLY_REFUSED = 0, REPLY_STARTED = 1, REPLY_DONE = 2, REPLY_BUSY = 3;
 
     public record FillRequest(boolean stop, long since) {}
 

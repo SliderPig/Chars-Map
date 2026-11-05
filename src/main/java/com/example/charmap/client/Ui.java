@@ -17,10 +17,19 @@ import net.minecraft.network.chat.Component;
 import org.joml.Matrix4f;
 
 // Smooth rounded shapes and the normal Minecraft font, all in real screen pixels so they stay crisp at any GUI scale. Nothing here is a straight-edged box.
+// Between begin and end, every shape goes into one list of triangles and all text into one batch: on a built-in graphics chip each separate draw costs far more than its pixels.
 public final class Ui {
     private Ui() {}
 
     public static final int PINK = 0xFFFF7EB6, PINK_DARK = 0xFFC2548A, PLUM = 0xFF2A1B2E, PLUM_LIGHT = 0xFF3D2A43, PLUM_DARK = 0xFF18101B, TEXT = 0xFFF8EAF2, TEXT_DIM = 0xFFBBA5B5;
+
+    private record Line(String text, float x, float y, int colour, int scale) {}
+
+    private static boolean open;
+    private static BufferBuilder buf;
+    private static Matrix4f matrix;
+    private static final List<Line> LINES = new ArrayList<>();
+    private static final List<Runnable> AFTER = new ArrayList<>();
 
     public static float scale() {
         return (float) Minecraft.getInstance().getWindow().getGuiScale();
@@ -32,52 +41,94 @@ public final class Ui {
         g.pose().scale(s, s, 1);
     }
 
-    private static int a(int c) { return c >>> 24; }
-    private static int r(int c) { return (c >> 16) & 255; }
-    private static int gr(int c) { return (c >> 8) & 255; }
-    private static int b(int c) { return c & 255; }
+    public static void begin(GuiGraphics g) {
+        if (open) return;
+        g.flush();
+        open = true;
+        matrix = g.pose().last().pose();
+        buf = Tesselator.getInstance().getBuilder();
+        buf.begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
+    }
+
+    // Draws all shapes, then anything textured that was waiting for them, then all the text on top.
+    public static void end(GuiGraphics g) {
+        if (!open) return;
+        open = false;
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableCull();
+        RenderSystem.disableDepthTest();
+        BufferUploader.drawWithShader(buf.end());
+        buf = null;
+        if (!AFTER.isEmpty()) {
+            for (Runnable r : AFTER) r.run();
+            AFTER.clear();
+        }
+        if (!LINES.isEmpty()) {
+            g.drawManaged(() -> {
+                var font = Minecraft.getInstance().font;
+                PoseStack pose = g.pose();
+                for (Line l : LINES) {
+                    pose.pushPose();
+                    pose.translate(Math.round(l.x), Math.round(l.y), 0);
+                    pose.scale(l.scale, l.scale, 1);
+                    g.drawString(font, l.text, 0, 0, l.colour, false);
+                    pose.popPose();
+                }
+            });
+            LINES.clear();
+        }
+        RenderSystem.disableCull();
+        RenderSystem.disableDepthTest();
+    }
+
+    // For something textured that has to wait until the shapes are down.
+    public static void after(Runnable draw) {
+        AFTER.add(draw);
+    }
+
+    private static void vertex(float x, float y, int c) {
+        buf.vertex(matrix, x, y, 0).color((c >> 16) & 255, (c >> 8) & 255, c & 255, c >>> 24).endVertex();
+    }
 
     // A filled polygon around cx,cy, with a soft 1.2 pixel fade on its edge so it never looks jagged.
     public static void polygon(GuiGraphics g, float cx, float cy, float[] poly, float[] outer, int colour) {
-        g.flush();
-        Matrix4f m = g.pose().last().pose();
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        RenderSystem.enableBlend();
-        RenderSystem.disableCull();
-        RenderSystem.defaultBlendFunc();
-        BufferBuilder buf = Tesselator.getInstance().getBuilder();
-        buf.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_COLOR);
-        buf.vertex(m, cx, cy, 0).color(r(colour), gr(colour), b(colour), a(colour)).endVertex();
+        boolean own = !open;
+        if (own) begin(g);
         int n = poly.length / 2;
-        for (int i = 0; i <= n; i++) {
-            int k = i % n;
-            buf.vertex(m, cx + poly[k * 2], cy + poly[k * 2 + 1], 0).color(r(colour), gr(colour), b(colour), a(colour)).endVertex();
+        for (int i = 0; i < n; i++) {
+            int k = (i + 1) % n;
+            vertex(cx, cy, colour);
+            vertex(cx + poly[i * 2], cy + poly[i * 2 + 1], colour);
+            vertex(cx + poly[k * 2], cy + poly[k * 2 + 1], colour);
         }
-        BufferUploader.drawWithShader(buf.end());
         if (outer != null) band(g, cx, cy, poly, outer, colour, colour & 0xFFFFFF);
+        if (own) end(g);
     }
 
     // A strip between two outlines with the same number of points, fading from one colour to the other.
     public static void band(GuiGraphics g, float cx, float cy, float[] inner, float[] outer, int innerColour, int outerColour) {
-        Matrix4f m = g.pose().last().pose();
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        RenderSystem.enableBlend();
-        RenderSystem.disableCull();
-        RenderSystem.defaultBlendFunc();
-        BufferBuilder buf = Tesselator.getInstance().getBuilder();
-        buf.begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+        boolean own = !open;
+        if (own) begin(g);
         int n = inner.length / 2;
-        for (int i = 0; i <= n; i++) {
-            int k = i % n;
-            buf.vertex(m, cx + inner[k * 2], cy + inner[k * 2 + 1], 0).color(r(innerColour), gr(innerColour), b(innerColour), a(innerColour)).endVertex();
-            buf.vertex(m, cx + outer[k * 2], cy + outer[k * 2 + 1], 0).color(r(outerColour), gr(outerColour), b(outerColour), a(outerColour)).endVertex();
+        for (int i = 0; i < n; i++) {
+            int k = (i + 1) % n;
+            float ix = cx + inner[i * 2], iy = cy + inner[i * 2 + 1], jx = cx + inner[k * 2], jy = cy + inner[k * 2 + 1];
+            float ox = cx + outer[i * 2], oy = cy + outer[i * 2 + 1], px = cx + outer[k * 2], py = cy + outer[k * 2 + 1];
+            vertex(ix, iy, innerColour);
+            vertex(ox, oy, outerColour);
+            vertex(jx, jy, innerColour);
+            vertex(jx, jy, innerColour);
+            vertex(ox, oy, outerColour);
+            vertex(px, py, outerColour);
         }
-        BufferUploader.drawWithShader(buf.end());
+        if (own) end(g);
     }
 
     public static float[] rect(float w, float h, float radius, float grow, int perCorner) {
         float[] out = new float[(perCorner + 1) * 4 * 2];
-        radius = Math.min(radius, Math.min(w, h) / 2) ;
+        radius = Math.min(radius, Math.min(w, h) / 2);
         float ix = w / 2 - radius, iy = h / 2 - radius, rr = radius + grow;
         float[][] corners = {{ix, -iy, -90}, {ix, iy, 0}, {-ix, iy, 90}, {-ix, -iy, 180}};
         int o = 0;
@@ -109,7 +160,7 @@ public final class Ui {
     }
 
     public static int shift(int colour, int by) {
-        int rr = Math.max(0, Math.min(255, r(colour) + by)), gg = Math.max(0, Math.min(255, gr(colour) + by)), bb = Math.max(0, Math.min(255, b(colour) + by));
+        int rr = Math.max(0, Math.min(255, ((colour >> 16) & 255) + by)), gg = Math.max(0, Math.min(255, ((colour >> 8) & 255) + by)), bb = Math.max(0, Math.min(255, (colour & 255) + by));
         return (colour & 0xFF000000) | (rr << 16) | (gg << 8) | bb;
     }
 
@@ -118,27 +169,32 @@ public final class Ui {
         polygon(g, cx, cy, Shapes.rounded(radius, radius, corner), Shapes.rounded(radius + 1.1f, radius + 1.1f, corner), colour);
     }
 
+    private static final float[] HEX = {1f, 0f, 0.5f, 0.866f, -0.5f, 0.866f, -1f, 0f, -0.5f, -0.866f, 0.5f, -0.866f};
+
+    // A small dot, cheap enough to draw lots of. Only between begin and end.
+    public static void dot(float x, float y, float r, int c) {
+        for (int i = 0; i < 6; i++) {
+            int j = (i + 1) % 6;
+            vertex(x, y, c);
+            vertex(x + HEX[i * 2] * r, y + HEX[i * 2 + 1] * r, c);
+            vertex(x + HEX[j * 2] * r, y + HEX[j * 2 + 1] * r, c);
+        }
+    }
+
     // The arrow showing which way someone is facing: angle 0 = pointing up on the screen.
     public static void arrow(GuiGraphics g, float cx, float cy, float size, float radians, int colour, int edge) {
         float[] outerShape = Shapes.rotate(new float[] {0, -size * 1.28f, size * 0.95f, size * 1.05f, 0, size * 0.58f, -size * 0.95f, size * 1.05f}, radians);
         float[] shape = Shapes.rotate(new float[] {0, -size, size * 0.68f, size * 0.8f, 0, size * 0.36f, -size * 0.68f, size * 0.8f}, radians);
-        flatConcave(g, cx, cy, outerShape, edge);
-        flatConcave(g, cx, cy, shape, colour);
+        boolean own = !open;
+        if (own) begin(g);
+        dart(cx, cy, outerShape, edge);
+        dart(cx, cy, shape, colour);
+        if (own) end(g);
     }
 
     // Four-point dart: two triangles, because its notch would break a simple fan.
-    private static void flatConcave(GuiGraphics g, float cx, float cy, float[] p, int colour) {
-        g.flush();
-        Matrix4f m = g.pose().last().pose();
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        RenderSystem.enableBlend();
-        RenderSystem.disableCull();
-        RenderSystem.defaultBlendFunc();
-        BufferBuilder buf = Tesselator.getInstance().getBuilder();
-        buf.begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
-        int[] order = {0, 1, 2, 0, 2, 3};
-        for (int i : order) buf.vertex(m, cx + p[i * 2], cy + p[i * 2 + 1], 0).color(r(colour), gr(colour), b(colour), a(colour)).endVertex();
-        BufferUploader.drawWithShader(buf.end());
+    private static void dart(float cx, float cy, float[] p, int colour) {
+        for (int i : new int[] {0, 1, 2, 0, 2, 3}) vertex(cx + p[i * 2], cy + p[i * 2 + 1], colour);
     }
 
     public static Component styled(String s) {
@@ -159,29 +215,24 @@ public final class Ui {
     }
 
     public static void text(GuiGraphics g, String s, float x, float y, int colour) {
-        text(g, s, x, y, colour, 1f);
-    }
-
-    public static void text(GuiGraphics g, String s, float x, float y, int colour, float size) {
-        PoseStack pose = g.pose();
-        pose.pushPose();
-        pose.translate(Math.round(x), Math.round(y), 0);
-        int k = textScale(size);
-        pose.scale(k, k, 1);
-        g.drawString(Minecraft.getInstance().font, s, 0, 0, colour, false);
-        pose.popPose();
+        LINES.add(new Line(s, x, y, colour, textScale(1f)));
+        if (!open) {
+            begin(g);
+            end(g);
+        }
     }
 
     public static void textCentred(GuiGraphics g, String s, float cx, float y, int colour) {
         text(g, s, cx - width(s) / 2f, y, colour);
     }
 
-    // A piece of text on its own small rounded tag.
+    // A piece of text on its own small rounded tag, kept on the screen.
     public static void tag(GuiGraphics g, String s, float cx, float y, int back, int colour) {
         int w = width(s) + Math.round(6 * scale());
+        int screen = Minecraft.getInstance().getWindow().getWidth();
+        cx = Math.max(w / 2f + 2, Math.min(screen - w / 2f - 2, cx));
         round(g, cx - w / 2f, y, cx + w / 2f, y + lineHeight() + 2, lineHeight() * 0.55f, back);
         textCentred(g, s, cx, y + Math.round(scale() * 0.5f), colour);
-        g.flush();
     }
 
     // A screen's buttons: what's drawn this frame is what can be clicked next.
@@ -236,7 +287,6 @@ public final class Ui {
         int back = on ? (over ? shift(PINK, 14) : PINK) : (over ? shift(PLUM_LIGHT, 22) : PLUM_LIGHT);
         plate(g, x0, y0, x1, y1, (y1 - y0) / 2, back);
         textCentred(g, label, (x0 + x1) / 2, (y0 + y1) / 2 - lineHeight() / 2f + 1, on ? PLUM_DARK : TEXT);
-        g.flush();
         if (hits != null) hits.add(x0, y0, x1, y1, press);
     }
 

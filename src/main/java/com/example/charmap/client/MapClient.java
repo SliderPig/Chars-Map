@@ -54,7 +54,7 @@ public final class MapClient {
         return new KeyMapping("key.charmap." + name, code, "key.categories.charmap");
     }
 
-    private static final long UPLOAD_BUDGET = 1_000_000L, MAP_OPEN_UPLOAD_BUDGET = 3_000_000L, SNAPSHOT_BUDGET = 500_000L;
+    private static final long UPLOAD_BUDGET = 1_000_000L, MAP_OPEN_UPLOAD_BUDGET = 3_000_000L, SNAPSHOT_BUDGET = 500_000L, MOVING_SNAPSHOT_BUDGET = 300_000L;
 
     // Everything that belongs to the world and dimension you're in. Replaced when you change either.
     public static final class Session {
@@ -96,6 +96,8 @@ public final class MapClient {
     private static long thisFrame;
     public static long snapshotsTaken, copyNanos, slowestCopy;
     public static boolean worldShownLogged;
+    // What the corner map costs per frame with the world map closed, kept apart so it can be measured on its own.
+    public static final com.example.charmap.model.FrameStats MINIMAP_ONLY = new com.example.charmap.model.FrameStats();
 
     public static void setup() {
         MapConfig.load();
@@ -113,6 +115,7 @@ public final class MapClient {
         forge.addListener(MapClient::onCommands);
         forge.addListener(MapClient::onQuit);
         forge.addListener(MapClient::onWorldRender);
+        forge.addListener(MapClient::onLevelUnload);
     }
 
     private static void onKeys(RegisterKeyMappingsEvent e) {
@@ -129,11 +132,18 @@ public final class MapClient {
     }
 
     private static void onReloaders(RegisterClientReloadListenersEvent e) {
-        e.registerReloadListener((net.minecraft.server.packs.resources.ResourceManagerReloadListener) r -> BlockColours.clear());
+        e.registerReloadListener((net.minecraft.server.packs.resources.ResourceManagerReloadListener) r -> {
+            BlockColours.clear();
+            Icons.forget();
+        });
     }
 
     private static void onCommands(RegisterClientCommandsEvent e) {
         MapCommand.register(e.getDispatcher());
+    }
+
+    private static void onLevelUnload(net.minecraftforge.event.level.LevelEvent.Unload e) {
+        if (e.getLevel().isClientSide() && Minecraft.getInstance().level == e.getLevel() && Minecraft.getInstance().getConnection() == null) endSession(false);
     }
 
     private static void onLogin(ClientPlayerNetworkEvent.LoggingIn e) {
@@ -208,6 +218,7 @@ public final class MapClient {
         MapConfig.save();
         try {
             s.textures.close();
+            Minimap.close();
         } catch (Throwable t) {
             CharMap.once("gl-close", "Couldn't free the map's textures", t);
         }
@@ -347,9 +358,13 @@ public final class MapClient {
             worldShownLogged = true;
             CharMap.LOG.info("[CharMap] loading screen gone {} ms after joining", (start - joinNanos) / 1_000_000L);
         }
+        // What the frame before this one cost, now it's complete.
+        if (lastFrameWasPlain) MINIMAP_ONLY.add(thisFrame);
+        lastFrameWasPlain = mc.screen == null;
         try {
             s.textures.nextFrame();
-            s.textures.upload(mc.screen instanceof MapScreen ? MAP_OPEN_UPLOAD_BUDGET : UPLOAD_BUDGET);
+            Icons.work(mc.screen instanceof MapScreen || !Minimap.movingFast(), s.worker);
+            s.textures.upload(mc.screen instanceof MapScreen || !firstPixelsLogged ? MAP_OPEN_UPLOAD_BUDGET : UPLOAD_BUDGET);
             copyChunks(mc, s);
         } catch (Throwable t) {
             CharMap.once("frame", "Map frame work hit a problem, carrying on", t);
@@ -358,6 +373,8 @@ public final class MapClient {
         frameMillis += (thisFrame / 1_000_000.0 - frameMillis) * 0.05;
         thisFrame = 0;
     }
+
+    private static boolean lastFrameWasPlain;
 
     static void addFrameTime(long nanos) {
         thisFrame += nanos;
@@ -383,7 +400,7 @@ public final class MapClient {
                 snapshotsTaken++;
             }
             if (s.pending.isEmpty()) return;
-            if (System.nanoTime() - start > SNAPSHOT_BUDGET) return;
+            if (System.nanoTime() - start > (Minimap.movingFast() ? MOVING_SNAPSHOT_BUDGET : SNAPSHOT_BUDGET)) return;
         }
         s.pending.clear(); // whatever's left is too far away to matter now
     }

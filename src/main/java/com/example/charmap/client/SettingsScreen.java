@@ -40,6 +40,7 @@ public final class SettingsScreen extends Screen {
         RenderSystem.disableDepthTest();
         g.fill(0, 0, w, h, 0x60000000);
         hits.clear();
+        Ui.begin(g);
 
         float k = Ui.scale(), line = Ui.lineHeight();
         float rowH = line + 7 * k, gap = 2.5f * k, columnW = 158 * k, labelW = 62 * k, pad = 8 * k;
@@ -70,7 +71,14 @@ public final class SettingsScreen extends Screen {
         y = slider(g, "Opacity", x, y, labelW, cw, rowH, gap, (MapConfig.opacity - 0.2f) / 0.8f, a -> MapConfig.opacity = 0.2f + (float) a * 0.8f, Math.round(MapConfig.opacity * 100) + "%");
         y = slider(g, "Zoom", x, y, labelW, cw, rowH, gap, MapConfig.zoom / (float) (MapConfig.ZOOMS.length - 1), a -> MapConfig.zoom = (int) Math.round(a * (MapConfig.ZOOMS.length - 1)), "x" + trim(MapConfig.pixelsPerBlock()));
         y = toggle(g, "Rotate", x, y, labelW, cw, rowH, gap, MapConfig.rotate ? "Turns with you" : "North up", MapConfig.rotate, () -> MapConfig.rotate = !MapConfig.rotate);
-        y = toggle(g, "Mob dots", x, y, labelW, cw, rowH, gap, MapConfig.dots ? "On" : "Off", MapConfig.dots, () -> MapConfig.dots = !MapConfig.dots);
+        y = toggle(g, "Mobs", x, y, labelW, cw, rowH, gap, !MapConfig.dots ? "Off" : MapConfig.icons ? "Faces" : "Dots", MapConfig.dots, () -> {
+            if (MapConfig.dots && MapConfig.icons) MapConfig.icons = false;
+            else if (MapConfig.dots) MapConfig.dots = false;
+            else {
+                MapConfig.dots = true;
+                MapConfig.icons = true;
+            }
+        });
         y = toggle(g, "Text", x, y, labelW, cw, rowH, gap, MapConfig.infoText ? "Biome + coords" : "Off", MapConfig.infoText, () -> MapConfig.infoText = !MapConfig.infoText);
 
         // Right column: the world map and how it fills
@@ -94,6 +102,7 @@ public final class SettingsScreen extends Screen {
         Ui.pill(g, hits, x0 + pad, bottom, x0 + pad + columnW, bottom + rowH, MapConfig.enabled ? "Whole mod: on" : "Whole mod: resting", MapConfig.enabled, mouseX, mouseY, () -> MapConfig.enabled = !MapConfig.enabled);
         Ui.pill(g, hits, x0 + pad * 2 + columnW, bottom, x0 + pad * 2 + columnW * 2, bottom + rowH, "Done", false, mouseX, mouseY, this::onClose);
 
+        Ui.end(g);
         g.flush();
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
@@ -111,8 +120,10 @@ public final class SettingsScreen extends Screen {
     }
 
     private float slider(GuiGraphics g, String label, float x, float y, float labelW, float cw, float rowH, float gap, float amount, java.util.function.DoubleConsumer change, String value) {
-        Ui.text(g, label + "  " + value, x, y + (rowH - Ui.lineHeight()) / 2, Ui.TEXT_DIM);
-        Ui.slider(g, hits, x + labelW + 6, y, x + labelW + cw - 6, rowH, amount, mouseX, mouseY, change);
+        Ui.text(g, label, x, y + (rowH - Ui.lineHeight()) / 2, Ui.TEXT_DIM);
+        float valueW = Ui.width("0000") + 4;
+        Ui.text(g, value, x + labelW + cw - Ui.width(value), y + (rowH - Ui.lineHeight()) / 2, Ui.TEXT);
+        Ui.slider(g, hits, x + labelW + 8, y, x + labelW + cw - valueW - 8, rowH, amount, mouseX, mouseY, change);
         return y + rowH + gap;
     }
 

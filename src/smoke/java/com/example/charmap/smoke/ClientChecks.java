@@ -8,6 +8,7 @@ import com.example.charmap.client.MapScreen;
 import com.example.charmap.client.Minimap;
 import com.example.charmap.client.SettingsScreen;
 import com.example.charmap.client.Teammates;
+import com.example.charmap.client.Textures;
 import com.example.charmap.client.WaypointListScreen;
 import com.example.charmap.client.WaypointScreen;
 import com.example.charmap.model.Waypoint;
@@ -90,6 +91,34 @@ public final class ClientChecks {
         });
     }
 
+    // Straight-line flight, measuring frame rate and exactly what the corner map cost per frame, with the worst frame.
+    private static void fly(String label, float perTick, int seconds) {
+        Minecraft mc = Minecraft.getInstance();
+        List<Integer> fps = new ArrayList<>();
+        later(5, () -> {
+            MapClient.MINIMAP_ONLY.reset();
+            CharMap.LOG.info("[Check] start: {}", label);
+        });
+        for (int i = 0; i < seconds * 20; i++) {
+            int tick = i;
+            later(1, () -> {
+                if (mc.player == null) return;
+                mc.player.getAbilities().flying = true;
+                mc.player.setDeltaMovement(0, 0, 0);
+                mc.player.setPos(mc.player.getX() + perTick, 150, mc.player.getZ());
+                if (tick % 20 == 19) fps.add(mc.getFps());
+            });
+        }
+        later(1, () -> {
+            int sum = 0, low = Integer.MAX_VALUE;
+            for (int v : fps) {
+                sum += v;
+                low = Math.min(low, v);
+            }
+            CharMap.LOG.info("[Check] {}: FPS average {} lowest {}. Corner map per frame: {}. {}", label, sum / Math.max(1, fps.size()), low, MapClient.MINIMAP_ONLY.summary(), Minimap.debugLine());
+        });
+    }
+
     private static void quit(int after) {
         later(after, () -> {
             CharMap.LOG.info("[Check] finished. {}", Minimap.debugLine());
@@ -120,12 +149,27 @@ public final class ClientChecks {
             });
         });
         shot(160, "01_minimap_spawn");
+        later(5, () -> {
+            MapClient.MINIMAP_ONLY.reset();
+        });
+        later(200, () -> CharMap.LOG.info("[Check] standing still, corner map per frame: {}. {}", MapClient.MINIMAP_ONLY.summary(), Minimap.debugLine()));
 
         // Turn and turn about, so the world settling down doesn't favour either
+        later(100, () -> {});
         for (int round = 1; round <= 2; round++) {
-            measure(round == 1 ? 80 : 40, "map ON, standing still, render distance 8, round " + round, 8);
-            later(1, () -> MapConfig.enabled = false);
-            measure(40, "map RESTING (same as no map), standing still, round " + round, 8);
+            measure(30, "map ON, standing still, round " + round, 6);
+            later(1, () -> MapConfig.dots = MapConfig.infoText = MapConfig.compass = false);
+            measure(30, "map only, no text dots compass, round " + round, 6);
+            later(1, () -> {
+                MapConfig.dots = MapConfig.infoText = MapConfig.compass = true;
+                MapConfig.showMinimap = false;
+            });
+            measure(30, "working but minimap hidden, round " + round, 6);
+            later(1, () -> {
+                MapConfig.showMinimap = true;
+                MapConfig.enabled = false;
+            });
+            measure(30, "RESTING (same as no map), round " + round, 6);
             later(1, () -> MapConfig.enabled = true);
         }
 
@@ -146,11 +190,26 @@ public final class ClientChecks {
         shot(200, "02_minimap_water");
 
         // Walk the world in hops so several regions end up on disk
-        teleport(10, "minecraft:overworld", 900, 110, 0);
-        teleport(140, "minecraft:overworld", 1600, 110, 700);
-        teleport(140, "minecraft:overworld", 800, 110, 1400);
-        teleport(140, "minecraft:overworld", -600, 110, 900);
-        shot(120, "03_minimap_after_hops");
+        later(10, () -> {
+            Textures.usePixelBuffer = false;
+            CharMap.LOG.info("[Check] uploads without a pixel buffer from here: {}", Minimap.debugLine());
+        });
+        teleport(1, "minecraft:overworld", 900, 110, 0);
+        later(120, () -> CharMap.LOG.info("[Check] uploads without: {}", Minimap.debugLine()));
+        teleport(1, "minecraft:overworld", 1600, 110, 700);
+        later(120, () -> {
+            CharMap.LOG.info("[Check] uploads without: {}", Minimap.debugLine());
+            Textures.usePixelBuffer = true;
+        });
+        teleport(1, "minecraft:overworld", 800, 110, 1400);
+        later(120, () -> CharMap.LOG.info("[Check] uploads with: {}", Minimap.debugLine()));
+        teleport(1, "minecraft:overworld", -600, 110, 900);
+        later(120, () -> CharMap.LOG.info("[Check] uploads with: {}", Minimap.debugLine()));
+        shot(5, "03_minimap_after_hops");
+        fly("flying at 60 blocks a second, map on", 3f, 15);
+        later(1, () -> MapConfig.enabled = false);
+        fly("flying at 60 blocks a second, map resting", -3f, 15);
+        later(1, () -> MapConfig.enabled = true);
 
         later(10, () -> {
             MapConfig.circle = true;

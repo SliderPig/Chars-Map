@@ -1,24 +1,11 @@
 package com.example.charmap.client;
 
 import com.example.charmap.CharMap;
-import com.example.charmap.model.Shapes;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.BufferUploader;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.multiplayer.PlayerInfo;
-import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.client.resources.DefaultPlayerSkin;
-import net.minecraft.resources.ResourceLocation;
-import org.joml.Matrix4f;
 
 // Friends on the map, through the teams mod when it's there. Without that mod there's simply nobody to show.
 public final class Teammates {
@@ -84,37 +71,10 @@ public final class Teammates {
         return d.equals(here) || ("minecraft:" + d).equals(here);
     }
 
-    // A round head with the hat layer on top and a thin pink ring.
+    // A round head with a thin pink ring. Comes out of the shared face texture like everyone else's.
     public static void head(GuiGraphics g, Mate mate, float cx, float cy, float radius) {
-        Minecraft mc = Minecraft.getInstance();
-        ResourceLocation skin = DefaultPlayerSkin.getDefaultSkin(mate.id());
-        if (mc.getConnection() != null) {
-            PlayerInfo info = mc.getConnection().getPlayerInfo(mate.id());
-            if (info != null) skin = info.getSkinLocation();
-        }
-        float[] circle = Shapes.rounded(radius, radius, 8);
-        Ui.polygon(g, cx, cy, Shapes.rounded(radius + 2.2f, radius + 2.2f, 8), Shapes.rounded(radius + 3.2f, radius + 3.2f, 8), Ui.PINK);
-        face(g, skin, cx, cy, circle, radius, 8f / 64, 8f / 64);
-        face(g, skin, cx, cy, circle, radius, 40f / 64, 8f / 64);
-    }
-
-    private static void face(GuiGraphics g, ResourceLocation skin, float cx, float cy, float[] circle, float radius, float u, float v) {
-        g.flush();
-        Matrix4f m = g.pose().last().pose();
-        RenderSystem.setShader(GameRenderer::getPositionTexShader);
-        RenderSystem.setShaderTexture(0, skin);
-        RenderSystem.enableBlend();
-        RenderSystem.disableCull();
-        RenderSystem.defaultBlendFunc();
-        BufferBuilder buf = Tesselator.getInstance().getBuilder();
-        buf.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_TEX);
-        float side = 8f / 64, mu = u + side / 2, mv = v + side / 2;
-        buf.vertex(m, cx, cy, 0).uv(mu, mv).endVertex();
-        int n = circle.length / 2;
-        for (int i = 0; i <= n; i++) {
-            int k = i % n;
-            buf.vertex(m, cx + circle[k * 2], cy + circle[k * 2 + 1], 0).uv(mu + circle[k * 2] / radius * side / 2, mv + circle[k * 2 + 1] / radius * side / 2).endVertex();
-        }
-        BufferUploader.drawWithShader(buf.end());
+        Ui.dot(cx, cy, radius + 3.4f, 0xE0180E1B);
+        Ui.disc(g, cx, cy, radius + 2.2f, Ui.PINK);
+        Icons.add(Icons.playerCell(mate.id()), cx, cy, radius);
     }
 }

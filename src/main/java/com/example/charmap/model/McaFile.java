@@ -8,7 +8,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.Inflater;
-import java.util.zip.InflaterInputStream;
 
 // One region file of a world save, read whole into memory so the game can keep writing to its copy on disk.
 public final class McaFile {
@@ -51,20 +50,36 @@ public final class McaFile {
             System.arraycopy(file, start + 5, raw, 0, raw.length);
             return raw;
         }
-        InputStream in = new ByteArrayInputStream(file, start + 5, length - 1);
-        Inflater inflater = null;
-        try {
-            if (kind == 1) in = new GZIPInputStream(in);
-            else if (kind == 2) in = new InflaterInputStream(in, inflater = new Inflater(), 4096);
-            else return null;
+        if (kind == 2) return inflate(start + 5, length - 1);
+        if (kind != 1) return null;
+        try (InputStream in = new GZIPInputStream(new ByteArrayInputStream(file, start + 5, length - 1))) {
             ByteArrayOutputStream out = new ByteArrayOutputStream(Math.max(8192, length * 4));
             byte[] buffer = new byte[8192];
             int got;
             while ((got = in.read(buffer)) > 0) out.write(buffer, 0, got);
             return out.toByteArray();
-        } finally {
-            if (inflater != null) inflater.end();
-            in.close();
         }
+    }
+
+    // One unpacker per thread, reused: making a new one for every chunk is most of the cost of a small chunk.
+    private static final ThreadLocal<Inflater> INFLATER = ThreadLocal.withInitial(Inflater::new);
+
+    private byte[] inflate(int from, int length) throws IOException {
+        Inflater inflater = INFLATER.get();
+        inflater.reset();
+        inflater.setInput(file, from, length);
+        byte[] out = new byte[Math.max(16384, length * 5)];
+        int size = 0;
+        try {
+            while (!inflater.finished()) {
+                if (size == out.length) out = java.util.Arrays.copyOf(out, out.length * 2);
+                int got = inflater.inflate(out, size, out.length - size);
+                if (got == 0 && (inflater.needsInput() || inflater.needsDictionary())) throw new IOException("chunk data cut short");
+                size += got;
+            }
+        } catch (java.util.zip.DataFormatException e) {
+            throw new IOException("bad chunk data", e);
+        }
+        return java.util.Arrays.copyOf(out, size);
     }
 }

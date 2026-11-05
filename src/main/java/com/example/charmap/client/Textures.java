@@ -5,9 +5,15 @@ import com.example.charmap.model.Coords;
 import com.mojang.blaze3d.platform.GlStateManager;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import java.nio.IntBuffer;
 import java.util.ArrayDeque;
+import net.minecraft.client.Minecraft;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.GL21;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.system.MemoryUtil;
 
 // The graphics card's side of the map: a fixed pool of 512x512 textures, reused oldest-first, filled a strip at a time within a tight budget per frame.
 public final class Textures {
@@ -45,6 +51,7 @@ public final class Textures {
 
     public int uploadedThisFrame;
     public long stripNanos, strips, slowestStrip;
+    public long changes; // goes up whenever pixels land in any texture
 
     public Textures(MapWorker worker) {
         this.worker = worker;
@@ -156,12 +163,8 @@ public final class Textures {
                 }
                 MapWorker.Upload u = current;
                 Gl g = tiles.get(u.key);
-                if (g == null && u.full) {
-                    worker.wanted.remove(u.key);
-                    finishCurrent();
-                    continue;
-                }
                 if (g == null) {
+                    if (u.full) worker.wanted.remove(u.key);
                     finishCurrent();
                     continue;
                 }
@@ -176,23 +179,21 @@ public final class Textures {
                         continue;
                     }
                     g.id = takeTexture(u.key);
-                    if (g.id == 0) { // every texture is on screen right now: try again next frame
-                        return;
-                    }
+                    if (g.id == 0) return; // every texture is on screen right now: try again next frame
                     g.empty = false;
                     g.ready = false;
+                    clear(g.id);
                 }
                 if (!stateSet) {
                     stateSet = true;
                     GlStateManager._pixelStore(GL11.GL_UNPACK_ALIGNMENT, 4);
+                    GlStateManager._pixelStore(GL11.GL_UNPACK_ROW_LENGTH, 0);
+                    GlStateManager._pixelStore(GL11.GL_UNPACK_SKIP_ROWS, 0);
+                    GlStateManager._pixelStore(GL11.GL_UNPACK_SKIP_PIXELS, 0);
                 }
-                GlStateManager._bindTexture(g.id);
-                int rows = Math.min(64, u.h - currentRow);
-                GlStateManager._pixelStore(GL11.GL_UNPACK_ROW_LENGTH, u.w);
-                GlStateManager._pixelStore(GL11.GL_UNPACK_SKIP_PIXELS, 0);
-                GlStateManager._pixelStore(GL11.GL_UNPACK_SKIP_ROWS, currentRow);
+                int rows = Math.min(STRIP, u.h - currentRow);
                 long before = System.nanoTime();
-                GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, u.x, u.y + currentRow, u.w, rows, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, u.pixels);
+                sendStrip(g.id, u, rows);
                 long took = System.nanoTime() - before;
                 stripNanos += took;
                 strips++;
@@ -201,18 +202,57 @@ public final class Textures {
                 uploadedThisFrame++;
                 if (currentRow >= u.h) {
                     if (u.full) g.ready = true;
+                    changes++;
                     finishCurrent();
                 }
             }
         } catch (Throwable t) {
             CharMap.once("upload", "Couldn't send map pixels to the graphics card", t);
             current = null;
-        } finally {
-            if (stateSet) {
-                GlStateManager._pixelStore(GL11.GL_UNPACK_ROW_LENGTH, 0);
-                GlStateManager._pixelStore(GL11.GL_UNPACK_SKIP_ROWS, 0);
-                GlStateManager._pixelStore(GL11.GL_UNPACK_SKIP_PIXELS, 0);
-            }
+        }
+    }
+
+    private static final int STRIP = 64;
+    // Through a pixel buffer the driver takes a copy and gets on with it later, rather than making the game wait until the graphics chip has finished with the texture.
+    public static boolean usePixelBuffer = true;
+    private IntBuffer staging;
+    private int pixelBuffer, clearTarget;
+
+    private void sendStrip(int id, MapWorker.Upload u, int rows) {
+        if (staging == null) staging = MemoryUtil.memAllocInt(Coords.TILE * STRIP);
+        staging.clear();
+        for (int r = 0; r < rows; r++) staging.put(u.pixels, u.offset + (currentRow + r) * u.stride, u.w);
+        staging.flip();
+        GlStateManager._bindTexture(id);
+        if (usePixelBuffer) {
+            if (pixelBuffer == 0) pixelBuffer = GlStateManager._glGenBuffers();
+            GlStateManager._glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, pixelBuffer);
+            GL15.glBufferData(GL21.GL_PIXEL_UNPACK_BUFFER, staging, GL15.GL_STREAM_DRAW);
+            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, u.x, u.y + currentRow, u.w, rows, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, 0L);
+            GlStateManager._glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
+        } else {
+            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, u.x, u.y + currentRow, u.w, rows, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, staging);
+        }
+    }
+
+    // A new or reused texture starts see-through. The graphics chip does this itself in no time, so the pixels only need sending for the part with something on it.
+    private void clear(int id) {
+        Minecraft mc = Minecraft.getInstance();
+        if (clearTarget == 0) clearTarget = GlStateManager.glGenFramebuffers();
+        GlStateManager._glBindFramebuffer(GL30.GL_FRAMEBUFFER, clearTarget);
+        GlStateManager._glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, id, 0);
+        boolean good = GlStateManager.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER) == GL30.GL_FRAMEBUFFER_COMPLETE;
+        if (good) {
+            GlStateManager._disableScissorTest();
+            GlStateManager._colorMask(true, true, true, true);
+            GlStateManager._clearColor(0, 0, 0, 0);
+            GlStateManager._clear(GL11.GL_COLOR_BUFFER_BIT, false);
+        }
+        GlStateManager._glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, 0, 0);
+        mc.getMainRenderTarget().bindWrite(true);
+        if (!good) { // never seen, but a garbage texture would be worse than a slow one
+            GlStateManager._bindTexture(id);
+            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, Coords.TILE, Coords.TILE, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, new int[Coords.TILE * Coords.TILE]);
         }
     }
 
@@ -238,5 +278,11 @@ public final class Textures {
         free.clear();
         made = 0;
         current = null;
+        if (staging != null) MemoryUtil.memFree(staging);
+        staging = null;
+        if (pixelBuffer != 0) GlStateManager._glDeleteBuffers(pixelBuffer);
+        pixelBuffer = 0;
+        if (clearTarget != 0) GlStateManager._glDeleteFramebuffers(clearTarget);
+        clearTarget = 0;
     }
 }

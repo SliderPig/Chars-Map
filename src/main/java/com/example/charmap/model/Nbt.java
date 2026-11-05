@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -57,7 +58,9 @@ public final class Nbt {
         String text() throws IOException {
             int n = u16();
             need(n);
-            String s = new DataInputStream(new ByteArrayInputStream(lengthPrefixed(n))).readUTF();
+            boolean plain = true;
+            for (int i = 0; i < n && plain; i++) plain = a[o + i] > 0;
+            String s = plain ? new String(a, o, n, StandardCharsets.ISO_8859_1) : new DataInputStream(new ByteArrayInputStream(lengthPrefixed(n))).readUTF();
             o += n;
             return s;
         }

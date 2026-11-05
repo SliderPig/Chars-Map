@@ -81,7 +81,10 @@ public final class MapScreen extends Screen {
         if (s != null) {
             float cx = w / 2f, cy = h / 2f;
             float[] shape = {-cx, -cy, cx, -cy, cx, cy, -cx, cy};
-            MapView.draw(g, s.textures, viewLayer(s), shape, cx, cy, centreX, centreZ, shownZoom, 0f, 1f, s.textures.budget() * 3 / 4);
+            g.flush();
+            MapView.draw(g.pose().last().pose(), s.textures, viewLayer(s), shape, cx, cy, centreX, centreZ, shownZoom, 0f, 1f, s.textures.budget() * 3 / 4);
+            Ui.begin(g);
+            drawMobs(g, s, cx, cy);
             drawWaypoints(g, s, cx, cy);
             drawMates(g, s, cx, cy);
             LocalPlayer p = mc.player;
@@ -90,12 +93,41 @@ public final class MapScreen extends Screen {
                 Ui.arrow(g, px, py, 9, (float) Math.toRadians(p.getViewYRot(partial) - 180), Ui.PINK, 0xFF1A0F1C);
             }
             drawBars(g, s, w, h);
-            if (menuOpen) drawMenu(g, s);
+            Ui.after(() -> Icons.flush(g));
+            Ui.end(g);
+            if (menuOpen) {
+                Ui.begin(g);
+                drawMenu(g, s);
+                Ui.end(g);
+            }
         }
         g.flush();
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
         g.pose().popPose();
+    }
+
+    private void drawMobs(GuiGraphics g, MapClient.Session s, float cx, float cy) {
+        if (!MapConfig.dots) return;
+        float r = Math.max(7, Ui.scale() * 4f) * Math.min(1.4f, Math.max(0.7f, shownZoom));
+        for (var e : Minimap.NEAR) {
+            if (e.isRemoved()) continue;
+            float x = cx + (float) (e.getX() - centreX) * shownZoom, y = cy + (float) (e.getZ() - centreZ) * shownZoom;
+            if (x < -20 || y < -20 || x > cx * 2 + 20 || y > cy * 2 + 20) continue;
+            int colour = Minimap.ringColour(e);
+            int cell = !MapConfig.icons ? -1 : e instanceof net.minecraft.world.entity.player.Player ? Icons.playerCell(e.getUUID()) : Icons.mobCell(e.getType(), s.worker);
+            if (cell < 0) {
+                Ui.dot(x, y, 4, 0xC0000000);
+                Ui.dot(x, y, 3, colour);
+                continue;
+            }
+            Ui.dot(x, y, r + 1.6f, 0xE0180E1B);
+            Ui.dot(x, y, r + 0.8f, colour);
+            Icons.add(cell, x, y, r);
+            boolean over = Math.abs(mouseX - x) < r && Math.abs(mouseY - y) < r;
+            if (over) Ui.tag(g, e.getName().getString(), x, y + r + 3, 0xD0180E1B, Ui.TEXT);
+            else if (e instanceof net.minecraft.world.entity.player.Player && MapConfig.playerNames) Ui.tag(g, e.getName().getString(), x, y + r + 3, 0xD0180E1B, Ui.TEXT);
+        }
     }
 
     private void drawWaypoints(GuiGraphics g, MapClient.Session s, float cx, float cy) {

@@ -92,6 +92,7 @@ public final class WaypointScreen extends Screen {
         Ui.toRealPixels(g);
         RenderSystem.disableDepthTest();
         g.fill(0, 0, w, h, 0x70000000);
+        Ui.begin(g);
         float pw = panelW(), ph = panelH();
         float x0 = (Math.round(width / 2f - 95)) * k, y0 = (Math.round(height / 2f - 59)) * k;
         Ui.plate(g, x0, y0, x0 + pw, y0 + ph, 16, Ui.PLUM);
@@ -119,6 +120,7 @@ public final class WaypointScreen extends Screen {
         Ui.pill(g, hits, x0 + 11 * k + each, by, x0 + 11 * k + each * 2, by + bh, "Cancel", false, mouseX, mouseY, this::onClose);
         if (!isNew) Ui.pill(g, hits, x0 + 14 * k + each * 2, by, x0 + 14 * k + each * 3, by + bh, "Delete", false, mouseX, mouseY, this::delete);
 
+        Ui.end(g);
         g.flush();
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();

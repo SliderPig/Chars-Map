@@ -24,8 +24,9 @@ import net.minecraft.world.level.storage.LevelResource;
 import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.network.PacketDistributor;
 
-// The optional server half. Reads the server's save files on its own low-priority thread and sends small summaries, never faster than the set speed.
-// It shows the map of parts nobody has walked, so only ops can ask unless config/charmap-server.properties says allowEveryone=true.
+// The server half: the same jar on a server sends players with the mod a summary of every chunk that's been generated, so their map fills in by itself.
+// It reads the save files on its own low-priority thread and never touches the game's chunks, so the server's main thread doesn't notice. It never sends faster than the set speed.
+// config/charmap-server.properties: enabled (who can have it at all), opsOnly (only ops), kilobytesPerSecond (per player), playersAtOnce.
 public final class ServerFill {
     private ServerFill() {}
 
@@ -44,8 +45,10 @@ public final class ServerFill {
                     p.load(r);
                 }
             } else {
-                p.setProperty("allowEveryone", "false");
+                p.setProperty("enabled", "true");
+                p.setProperty("opsOnly", "false");
                 p.setProperty("kilobytesPerSecond", "128");
+                p.setProperty("playersAtOnce", "3");
                 try (var w = Files.newBufferedWriter(file)) {
                     p.store(w, "Char's Map: who can fill their map from this server's saves, and how fast it sends");
                 }
@@ -61,20 +64,20 @@ public final class ServerFill {
         if (running != null) running.stop = true;
         if (stop) return;
         Properties config = config();
-        boolean everyone = "true".equalsIgnoreCase(config.getProperty("allowEveryone", "false").trim());
-        if (!everyone && !player.hasPermissions(2)) {
+        boolean enabled = !"false".equalsIgnoreCase(config.getProperty("enabled", "true").trim());
+        boolean opsOnly = "true".equalsIgnoreCase(config.getProperty("opsOnly", "false").trim());
+        if (!enabled || (opsOnly && !player.hasPermissions(2))) {
             send(player, new Net.FillReply(Net.REPLY_REFUSED, 0, 0));
             return;
         }
-        int rate;
-        try {
-            rate = Math.max(8, Integer.parseInt(config.getProperty("kilobytesPerSecond", "128").trim()));
-        } catch (NumberFormatException e) {
-            rate = 128;
+        if (JOBS.size() >= number(config, "playersAtOnce", 3, 1)) {
+            send(player, new Net.FillReply(Net.REPLY_BUSY, 0, 0));
+            return;
         }
+        int rate = number(config, "kilobytesPerSecond", 128, 8);
         ServerLevel level = player.serverLevel();
         MinecraftServer server = player.getServer();
-        Path dir = DimensionType.getStorageFolder(level.dimension(), server.getWorldPath(LevelResource.ROOT)).resolve("region");
+        Path dir = regionFolder(level, server);
         int bx = player.getBlockX(), bz = player.getBlockZ();
         int ceiling = level.dimensionType().hasCeiling() ? Math.min(level.dimensionType().logicalHeight() + level.getMinBuildHeight(), level.getMaxBuildHeight()) - 1 : Integer.MIN_VALUE;
         Job job = new Job();
@@ -94,6 +97,32 @@ public final class ServerFill {
         t.setDaemon(true);
         t.setPriority(Thread.MIN_PRIORITY);
         t.start();
+    }
+
+    private static int number(Properties config, String key, int fallback, int least) {
+        try {
+            return Math.max(least, Integer.parseInt(config.getProperty(key, "" + fallback).trim()));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    // The normal place, or the separate world folders Bukkit-style servers (Arclight can) keep the Nether and End in.
+    static Path regionFolder(ServerLevel level, MinecraftServer server) {
+        Path root = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
+        Path normal = DimensionType.getStorageFolder(level.dimension(), root).resolve("region");
+        if (Files.isDirectory(normal)) return normal;
+        Path parent = root.getParent();
+        if (parent != null && root.getFileName() != null) {
+            String name = root.getFileName().toString(), dim = level.dimension().location().getPath();
+            for (String suffix : new String[] {"_" + dim, dim.equals("the_nether") ? "_nether" : "_" + dim}) {
+                Path side = parent.resolve(name + suffix);
+                Path other = DimensionType.getStorageFolder(level.dimension(), side).resolve("region");
+                if (Files.isDirectory(other)) return other;
+                if (Files.isDirectory(side.resolve("region"))) return side.resolve("region");
+            }
+        }
+        return normal;
     }
 
     private static void send(ServerPlayer player, Object message) {

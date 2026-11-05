@@ -57,9 +57,16 @@ public final class Filler {
 
     // Automatic fill round where you are, on your own world only: when you first join, then again when you've gone somewhere new.
     static void tick(MapClient.Session s, LocalPlayer player) {
-        if (!MapConfig.fillEnabled || running || !MapClient.isHost()) return;
+        if (!MapConfig.fillEnabled || running) return;
         long now = System.currentTimeMillis();
         if (now < nextAuto) return;
+        if (!MapClient.isHost()) {
+            // Once per world and dimension: the server sends everything generated, nearest first, a little at a time.
+            nextAuto = Long.MAX_VALUE;
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.getConnection() != null && Net.CHANNEL.isRemotePresent(mc.getConnection().getConnection())) askServer(s, false);
+            return;
+        }
         int rx = Coords.region(player.getBlockX()), rz = Coords.region(player.getBlockZ());
         if (rx == lastRegionX && rz == lastRegionZ && now < nextAuto + 300_000) return;
         lastRegionX = rx;
@@ -83,18 +90,25 @@ public final class Filler {
             return start(s, mc.player, whole ? 0 : MapConfig.fillRadius, true);
         }
         if (mc.getConnection() != null && Net.CHANNEL.isRemotePresent(mc.getConnection().getConnection())) {
-            fromServer = true;
-            startedAt = System.currentTimeMillis();
-            serverLast = startedAt;
-            chunksDone = 0;
-            regionsDone = 0;
-            regionsTotal = 0;
-            status = "Asking the server";
-            Net.CHANNEL.sendToServer(new Net.FillRequest(false, lastServerFill(s)));
+            askServer(s, true);
             return true;
         }
         say("This server doesn't have Char's Map, so the map only fills from what you've seen here.");
         return false;
+    }
+
+    private static boolean loudServerFill;
+
+    private static void askServer(MapClient.Session s, boolean loud) {
+        loudServerFill = loud;
+        fromServer = true;
+        startedAt = System.currentTimeMillis();
+        serverLast = startedAt;
+        chunksDone = 0;
+        regionsDone = 0;
+        regionsTotal = 0;
+        status = "Asking the server";
+        Net.CHANNEL.sendToServer(new Net.FillRequest(false, lastServerFill(s)));
     }
 
     public static void stop() {
@@ -256,16 +270,21 @@ public final class Filler {
         switch (code) {
             case Net.REPLY_REFUSED:
                 fromServer = false;
-                say("This server only lets ops fill the map from its saves.");
+                if (loudServerFill) say("This server doesn't let you fill the map from its saves.");
                 break;
             case Net.REPLY_STARTED:
                 regionsTotal = total;
-                say("Filling the map from the server, " + total + " regions.");
+                CharMap.LOG.info("[CharMap] server is sending {} regions", total);
+                break;
+            case Net.REPLY_BUSY:
+                fromServer = false;
+                if (loudServerFill) say("The server is already sending maps to other players, try again in a bit.");
                 break;
             case Net.REPLY_DONE:
                 fromServer = false;
                 if (s != null) rememberServerFill(s, finishedAt);
-                say("The map has everything the server has generated here.");
+                CharMap.LOG.info("[CharMap] server fill finished: {} chunks in {} ms", chunksDone, System.currentTimeMillis() - startedAt);
+                if (loudServerFill) say("The map has everything the server has generated here.");
                 break;
             default:
                 break;
