@@ -4,7 +4,7 @@ A minimap and world map for Forge 1.20.1, built to be as fast as it can be on a 
 
 - **Minimap** in a corner: rounded square or circle, north up or turning with you, zoom keys, biome + coords, facing arrow. Mobs and players show as real faces (or dots, or nothing: Settings).
 - **World map** on `M`: drag to move, wheel to zoom towards the mouse. Right-click to add a waypoint.
-- **3D view**: the "3D view" button on the world map shows the same map as real blocks and mountains. Drag to move, right-drag to turn, wheel to zoom, WASD to fly. "Flat map" goes back.
+- **3D view**: the "3D view" button on the world map (it remembers your choice; Flat is the default) turns the map into a little model of your world. Near the middle it's built from the real blocks with the game's own block drawing, so houses, roofs, fences, doors and trees look like themselves, and the real mobs and players walk about on it (only where the game has them loaded, which is near you). Further out the land carries on as columns of the map's colours and heights, fading into a pink haze. Drag to turn (it keeps a little swing), right-drag or WASD to move, wheel to zoom, "Reset view" to come back. Light and shadow from the sun in the north-west are baked in. Settings: how far the real blocks reach (256 by default, 0 = off), how much graphics memory they may use, and whether mobs are drawn real size, a bit bigger when zoomed out, or as faces.
 - **Waypoints**: `B` adds one, list on the world map, your last 3 deaths are kept, Overworld/Nether places show across the two (x/8), a thin beam in the world.
 - **Fill from generated chunks**: on your own world the map reads the save files directly, nearest first, and fills in places you haven't been to since joining. Automatic within a set reach (Settings), "Fill now" for the whole dimension, `/charmap fill [all]`.
 - **Teammates**: with the teams mod installed, heads + names on both maps, pinned to the minimap's edge when out of range.
@@ -30,12 +30,14 @@ Everything underneath:
 - **Unchanged chunks cost almost nothing**: each chunk has a fingerprint; the same fingerprint stops right there. The fill reads a region file's table first and skips the file if nothing's newer than what the map has.
 - **The fill reads save files itself**, with its own small reader: no chunks are loaded through the server, no game code runs. It eases off when frames drop.
 - **Faces** are pictured once from a fresh copy of the mob, kept in `charmap/icons`, and all share one texture, so a crowd is one draw.
-- **The 3D view** is patches of columns that get wider with distance, built on the map's own thread and only sent to the graphics card on the main thread. It only exists while the 3D view is open.
+- **The 3D view** only exists while it's open. The far land is patches of columns that get wider with distance, built on the map's thread. The real blocks come from the save files on your own world, from the chunks the game has loaded right now, or on a server from the server (if it has this mod) or from what you've seen there (kept in `charmap/<world>/<dimension>/blocks`). They're built into models on their own thread, nearest first, and only sent to the graphics card on the main thread, a few milliseconds a frame at most. The world behind the full-screen map isn't drawn at all while it's open.
 - **Never crashes the game**: any trouble is logged once, the map carries on.
 
 ## On a server
 
 Put the same jar on the server. Players with the mod then get a summary of every generated chunk (block names and heights, about 2 KB a chunk) automatically, nearest first, so their map fills in without walking anywhere. It remembers per player how far it got, so a big world carries on over several sessions (in `<world>/charmap-progress`). The server reads its save files on its own low-priority thread, never loads a chunk and never touches the main thread for it. Players without the mod notice nothing.
+
+It also sends the real blocks of chunks near a player's 3D view camera when asked, within `blocksReach` (2048) of them, at twice the fill speed.
 
 `config/charmap-server.properties`: `enabled` (default true), `opsOnly` (default false: it does show the map of parts nobody has walked, so set this if that matters to you), `kilobytesPerSecond` per player (default 128), `playersAtOnce` (default 3).
 
