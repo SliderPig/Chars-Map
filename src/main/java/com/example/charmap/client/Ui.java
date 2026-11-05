@@ -14,16 +14,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.Style;
-import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 
-// Smooth rounded shapes and clean text, all in real screen pixels so they stay crisp at any GUI scale. Nothing here is a straight-edged box.
+// Smooth rounded shapes and the normal Minecraft font, all in real screen pixels so they stay crisp at any GUI scale. Nothing here is a straight-edged box.
 public final class Ui {
     private Ui() {}
 
     public static final int PINK = 0xFFFF7EB6, PINK_DARK = 0xFFC2548A, PLUM = 0xFF2A1B2E, PLUM_LIGHT = 0xFF3D2A43, PLUM_DARK = 0xFF18101B, TEXT = 0xFFF8EAF2, TEXT_DIM = 0xFFBBA5B5;
-    public static final Style FONT = Style.EMPTY.withFont(new ResourceLocation("minecraft", "uniform"));
 
     public static float scale() {
         return (float) Minecraft.getInstance().getWindow().getGuiScale();
@@ -142,15 +139,20 @@ public final class Ui {
     }
 
     public static Component styled(String s) {
-        return Component.literal(s).withStyle(FONT);
+        return Component.literal(s);
+    }
+
+    // The font's own pixels must land on whole screen pixels or it goes blurry: always a whole-number size.
+    private static int textScale(float size) {
+        return Math.max(1, Math.round(scale() * size));
     }
 
     public static int width(String s) {
-        return Math.round(Minecraft.getInstance().font.width(styled(s)) * scale());
+        return Minecraft.getInstance().font.width(s) * textScale(1f);
     }
 
     public static int lineHeight() {
-        return Math.round(9 * scale());
+        return 9 * textScale(1f);
     }
 
     public static void text(GuiGraphics g, String s, float x, float y, int colour) {
@@ -160,10 +162,10 @@ public final class Ui {
     public static void text(GuiGraphics g, String s, float x, float y, int colour, float size) {
         PoseStack pose = g.pose();
         pose.pushPose();
-        pose.translate(x, y, 0);
-        float k = scale() * size;
+        pose.translate(Math.round(x), Math.round(y), 0);
+        int k = textScale(size);
         pose.scale(k, k, 1);
-        g.drawString(Minecraft.getInstance().font, styled(s), 0, 0, colour, false);
+        g.drawString(Minecraft.getInstance().font, s, 0, 0, colour, false);
         pose.popPose();
     }
 

@@ -15,7 +15,7 @@ JAVA = r'C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot\bin\java.exe'
 PROFILE_MODS = os.path.join(M, 'profiles', 'Powers', 'mods')
 NEEDED = ['embeddium-']
 RUN = os.path.abspath('run-real')
-TIMEOUT = 540
+TIMEOUT = 420
 
 
 def allowed(rules):
