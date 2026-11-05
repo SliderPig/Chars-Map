@@ -383,6 +383,30 @@ public final class ClientChecks {
     }
 
     private static BlockPos villageAt;
+    private static java.util.function.BooleanSupplier waitingFor;
+    private static int waitedTicks, waitLimit;
+
+    // Nothing else happens until this is true, or the limit runs out.
+    private static void waitUntil(int limitTicks, java.util.function.BooleanSupplier condition) {
+        later(1, () -> {
+            waitingFor = condition;
+            waitedTicks = 0;
+            waitLimit = limitTicks;
+        });
+    }
+
+    // Everything within this many chunks of the player has arrived.
+    private static boolean loadedAround(int radius) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) return false;
+        int cx = mc.player.getBlockX() >> 4, cz = mc.player.getBlockZ() >> 4;
+        for (int z = -radius; z <= radius; z++) {
+            for (int x = -radius; x <= radius; x++) {
+                if (mc.level.getChunkSource().getChunkNow(cx + x, cz + z) == null) return false;
+            }
+        }
+        return true;
+    }
 
     private static void view3D(float yaw, float pitch, float distance) {
         if (Minecraft.getInstance().screen instanceof MapScreen m && villageAt != null) {
@@ -412,17 +436,16 @@ public final class ClientChecks {
                 }
             });
         });
-        later(300, () -> {
-            var server = mc.getSingleplayerServer();
-            server.execute(() -> server.saveEverything(true, true, true));
-        });
-        later(60, () -> {
+        later(40, () -> {});
+        waitUntil(1500, () -> loadedAround(7));
+        later(100, () -> {
             MapScreen m = new MapScreen();
             mc.setScreen(m);
             m.set3D(true);
             view3D(0.6f, 0.62f, 95f);
         });
-        shot(120, "30_village_a");
+        waitUntil(600, () -> MapClient.session.voxels.waiting() == 0 && MapClient.session.voxels.meshes > 45);
+        shot(100, "30_village_a");
         measure(1, "3D view, village, close", 4);
         later(1, () -> view3D(2.5f, 0.42f, 60f));
         shot(60, "31_village_low");
@@ -505,6 +528,11 @@ public final class ClientChecks {
         }
         if (STEPS.isEmpty()) return;
         if (mc.screen instanceof net.minecraft.client.gui.screens.ReceivingLevelScreen) return; // nothing counts until the world is showing
+        if (waitingFor != null) {
+            if (!waitingFor.getAsBoolean() && ++waitedTicks < waitLimit) return;
+            CharMap.LOG.info("[Check] waited {} ticks", waitedTicks);
+            waitingFor = null;
+        }
         if (++wait >= STEPS.peek().after()) {
             wait = 0;
             try {
