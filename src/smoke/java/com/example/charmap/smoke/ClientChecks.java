@@ -49,6 +49,7 @@ public final class ClientChecks {
     private static final boolean ON = Boolean.getBoolean("charmap.smokeclient");
     private static final boolean REOPEN = Boolean.getBoolean("charmap.reopen");
     private static final String FPS_ONLY = System.getProperty("charmap.fpsonly", "");
+    private static final String JOIN = System.getProperty("charmap.join", "");
 
     private record Step(int after, Runnable what) {}
 
@@ -291,6 +292,37 @@ public final class ClientChecks {
             Teammates.extra = List.of();
         });
 
+        // The 3D view
+        later(1, () -> {
+            MapScreen m = new MapScreen();
+            mc.setScreen(m);
+            m.set3D(true);
+            m.view3d().distance = 260;
+            m.view3d().pitch = 0.75f;
+        });
+        shot(60, "20_3d_near");
+        measure(1, "3D view near", 5);
+        later(1, () -> {
+            if (mc.screen instanceof MapScreen m) {
+                m.view3d().distance = 1400;
+                m.view3d().yaw = 0.8f;
+            }
+        });
+        shot(60, "21_3d_far");
+        measure(1, "3D view far", 5);
+        later(1, () -> {
+            if (mc.screen instanceof MapScreen m) {
+                CharMap.LOG.info("[Check] 3D: {} patches drawn, {} MB", m.view3d().drawnLast, m.view3d().memoryBytes() / 1048576);
+                m.view3d().distance = 60;
+                m.view3d().pitch = 0.4f;
+            }
+        });
+        shot(60, "22_3d_blocks_close");
+        later(1, () -> {
+            if (mc.screen instanceof MapScreen m) m.set3D(false);
+            mc.setScreen(null);
+        });
+
         // Under the ground and in the Nether
         teleport(5, "minecraft:overworld", -600, 12, 900);
         later(5, () -> {
@@ -340,6 +372,26 @@ public final class ClientChecks {
         quit(20);
     }
 
+    // On a real server: the map fills by itself from what the server sends.
+    private static void scriptJoin() {
+        Minecraft mc = Minecraft.getInstance();
+        later(60, () -> CharMap.LOG.info("[Check] on the server: server has the mod: {}", mc.getConnection() != null && com.example.charmap.net.Net.CHANNEL.isRemotePresent(mc.getConnection().getConnection())));
+        shot(40, "s1_joined_server");
+        later(1, () -> {
+            MapScreen m = new MapScreen();
+            mc.setScreen(m);
+            if (mc.player != null) m.showAt(mc.player.getX(), mc.player.getZ(), 0.25f);
+        });
+        shot(100, "s2_map_filling_from_server");
+        for (int i = 0; i < 8; i++) {
+            later(100, () -> CharMap.LOG.info("[Check] from the server so far: {} chunks, {} of {} regions, {} chunks a second. {}", Filler.chunksDone, Filler.regionsDone, Filler.regionsTotal, Math.round(Filler.speed()), Minimap.debugLine()));
+        }
+        shot(1, "s3_map_filled_from_server");
+        later(1, () -> mc.setScreen(null));
+        later(20, () -> mc.level.disconnect());
+        later(40, () -> mc.stop());
+    }
+
     private static void scriptFps() {
         later(400, () -> {});
         measure(40, "only: " + FPS_ONLY, 15);
@@ -364,17 +416,21 @@ public final class ClientChecks {
             mc.resizeDisplay();
             noVsync(mc);
             if (FPS_ONLY.equals("off")) MapConfig.enabled = false;
-            if (REOPEN || !FPS_ONLY.isEmpty()) {
+            if (!JOIN.isEmpty()) {
+                net.minecraft.client.gui.screens.ConnectScreen.startConnecting(mc.screen, mc, net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(JOIN), new net.minecraft.client.multiplayer.ServerData("test", JOIN, false), false);
+            } else if (REOPEN || !FPS_ONLY.isEmpty()) {
                 mc.createWorldOpenFlows().loadLevel(mc.screen, "smoke");
             } else {
                 mc.createWorldOpenFlows().createFreshLevel("smoke", new LevelSettings("smoke", GameType.CREATIVE, false, Difficulty.PEACEFUL, true, new GameRules(), WorldDataConfiguration.DEFAULT),
                         new WorldOptions(20261105L, true, false), access -> access.registryOrThrow(Registries.WORLD_PRESET).getHolderOrThrow(WorldPresets.NORMAL).value().createWorldDimensions());
             }
         }
-        if (mc.player == null || mc.level == null || mc.getSingleplayerServer() == null || mc.getSingleplayerServer().getPlayerList().getPlayers().isEmpty()) return;
+        if (mc.player == null || mc.level == null) return;
+        if (JOIN.isEmpty() && (mc.getSingleplayerServer() == null || mc.getSingleplayerServer().getPlayerList().getPlayers().isEmpty())) return;
         if (!scripted) {
             scripted = true;
-            if (!FPS_ONLY.isEmpty()) scriptFps();
+            if (!JOIN.isEmpty()) scriptJoin();
+            else if (!FPS_ONLY.isEmpty()) scriptFps();
             else if (REOPEN) scriptReopen();
             else scriptFirstRun();
             CharMap.LOG.info("[Check] world is up, {} steps to go", STEPS.size());

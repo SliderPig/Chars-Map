@@ -1,6 +1,7 @@
 package com.example.charmap.client;
 
 import com.example.charmap.model.Waypoint;
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -26,6 +27,9 @@ public final class MapScreen extends Screen {
     private float menuX, menuY;
     private int menuBlockX, menuBlockZ;
     private Waypoint menuWaypoint;
+    private static boolean threeD;
+    private final Map3D view3d = new Map3D();
+    private boolean turning;
 
     public MapScreen() {
         super(Component.literal("World map"));
@@ -74,11 +78,22 @@ public final class MapScreen extends Screen {
             centreZ = anchorZ - anchorScreenY / shownZoom;
         }
 
+        if (threeD && s != null) {
+            flyKeys(mc, dt);
+            g.flush();
+            view3d.render(s, w, h);
+        }
         Ui.toRealPixels(g);
         RenderSystem.disableDepthTest();
-        g.fill(0, 0, w, h, 0xFF120C14);
         hits.clear();
-        if (s != null) {
+        if (threeD && s != null) {
+            Ui.begin(g);
+            drawMarkers3D(g, s, partial);
+            drawBars(g, s, w, h);
+            Ui.after(() -> Icons.flush(g));
+            Ui.end(g);
+        } else if (s != null) {
+            g.fill(0, 0, w, h, 0xFF120C14);
             float cx = w / 2f, cy = h / 2f;
             float[] shape = {-cx, -cy, cx, -cy, cx, cy, -cx, cy};
             g.flush();
@@ -105,6 +120,92 @@ public final class MapScreen extends Screen {
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
         g.pose().popPose();
+    }
+
+    private void flyKeys(Minecraft mc, float dt) {
+        long window = mc.getWindow().getWindow();
+        float forward = (InputConstants.isKeyDown(window, GLFW.GLFW_KEY_W) ? 1 : 0) - (InputConstants.isKeyDown(window, GLFW.GLFW_KEY_S) ? 1 : 0);
+        float right = (InputConstants.isKeyDown(window, GLFW.GLFW_KEY_D) ? 1 : 0) - (InputConstants.isKeyDown(window, GLFW.GLFW_KEY_A) ? 1 : 0);
+        if (forward != 0 || right != 0) view3d.fly(forward, right, dt * 0.8f);
+    }
+
+    // Who and what is where, on top of the 3D view.
+    private void drawMarkers3D(GuiGraphics g, MapClient.Session s, float partial) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (MapConfig.dots) {
+            float r = Math.max(7, Ui.scale() * 4f);
+            for (var e : Minimap.NEAR) {
+                if (e.isRemoved()) continue;
+                float[] at = view3d.project(e.getX(), e.getY() + e.getBbHeight() + 1.5, e.getZ());
+                if (at == null) continue;
+                int cell = !MapConfig.icons ? -1 : e instanceof net.minecraft.world.entity.player.Player ? Icons.playerCell(e.getUUID()) : Icons.mobCell(e.getType(), s.worker);
+                if (cell < 0) {
+                    Ui.dot(at[0], at[1], 4, 0xC0000000);
+                    Ui.dot(at[0], at[1], 3, Minimap.ringColour(e));
+                    continue;
+                }
+                Ui.dot(at[0], at[1], r + 1.6f, 0xE0180E1B);
+                Ui.dot(at[0], at[1], r + 0.8f, Minimap.ringColour(e));
+                Icons.add(cell, at[0], at[1], r);
+                if (e instanceof net.minecraft.world.entity.player.Player && MapConfig.playerNames) Ui.tag(g, e.getName().getString(), at[0], at[1] + r + 3, 0xD0180E1B, Ui.TEXT);
+            }
+        }
+        for (Waypoint wp : MapClient.WAYPOINTS) {
+            if (!wp.shown) continue;
+            int[] where = wp.placeIn(s.dimension);
+            if (where == null) continue;
+            float[] at = view3d.project(where[0] + 0.5, where[1] + 2, where[2] + 0.5);
+            if (at == null) continue;
+            Ui.dot(at[0], at[1], 9, 0xF0180E1B);
+            Ui.disc(g, at[0], at[1], 6.5f, 0xFF000000 | wp.colour);
+            Ui.tag(g, wp.name, at[0], at[1] + 12, 0xD0180E1B, wp.dimension.equals(s.dimension) ? Ui.TEXT : Ui.TEXT_DIM);
+        }
+        for (Teammates.Mate mate : Teammates.list()) {
+            if (!Teammates.sameDimension(mate, s.dimension)) continue;
+            float[] at = view3d.project(mate.x(), mate.y() + 3, mate.z());
+            if (at == null) continue;
+            float r = Math.max(10, Ui.scale() * 5.5f);
+            Teammates.head(g, mate, at[0], at[1], r);
+            Ui.tag(g, mate.name(), at[0], at[1] + r + 4, 0xD0180E1B, Ui.TEXT);
+        }
+        if (p != null) {
+            float[] at = view3d.project(p.getX(), p.getY() + 3, p.getZ());
+            if (at != null) Ui.arrow(g, at[0], at[1], 9, (float) Math.toRadians(p.getViewYRot(partial) - 180) + view3d.yaw, Ui.PINK, 0xFF1A0F1C);
+        }
+    }
+
+    public void set3D(boolean on) {
+        Minecraft mc = Minecraft.getInstance();
+        if (on && !threeD) {
+            double y = mc.player == null ? 64 : mc.player.getY();
+            float h = mc.getWindow().getHeight();
+            view3d.look(centreX, y, centreZ, Math.max(30, h / (2 * (float) Math.tan(Math.toRadians(30))) / shownZoom));
+        }
+        if (!on && threeD) {
+            centreX = view3d.targetX;
+            centreZ = view3d.targetZ;
+            view3d.close();
+            zooming = false;
+        }
+        threeD = on;
+    }
+
+    public Map3D view3d() {
+        return view3d;
+    }
+
+    @Override
+    protected void init() {
+        // Coming back to a map that was in 3D when it was last shut
+        if (threeD) {
+            threeD = false;
+            set3D(true);
+        }
+    }
+
+    @Override
+    public void removed() {
+        view3d.close();
     }
 
     private void drawMobs(GuiGraphics g, MapClient.Session s, float cx, float cy) {
@@ -161,6 +262,7 @@ public final class MapScreen extends Screen {
         int bx = (int) Math.floor(centreX + (mouseX - w / 2.0) / shownZoom), bz = (int) Math.floor(centreZ + (mouseY - h / 2.0) / shownZoom);
         String where = bx + ", " + bz;
         if (s.layer != 0) where += "   ·   cave view, y " + (s.layer - 8) * 16;
+        if (threeD) where = "Drag to move  ·  Right drag to turn  ·  Wheel to zoom  ·  WASD to fly";
         int tw = Ui.width(where);
         Ui.plate(g, pad, pad, pad + tw + 10 * k, pad + pillH, pillH / 2, Ui.PLUM);
         Ui.text(g, where, pad + 5 * k, pad + (pillH - line) / 2 + 1, Ui.TEXT);
@@ -180,13 +282,20 @@ public final class MapScreen extends Screen {
         // Buttons
         float y = h - pad - pillH, x = pad;
         x = button(g, x, y, pillH, k, "Centre on me", this::centreOnPlayer);
+        x = button(g, x, y, pillH, k, threeD ? "Flat map" : "3D view", () -> set3D(!threeD));
         x = button(g, x, y, pillH, k, "Waypoints", () -> Minecraft.getInstance().setScreen(new WaypointListScreen(this)));
         x = button(g, x, y, pillH, k, "Settings", () -> Minecraft.getInstance().setScreen(new SettingsScreen(this)));
 
         // Zoom, round buttons at the right
         float r = pillH / 2, zx = w - pad - r;
-        roundButton(g, zx, h - pad - r, r, "-", () -> zoomBy(1 / 1.5f, w / 2.0, h / 2.0));
-        roundButton(g, zx - r * 2 - 3 * k, h - pad - r, r, "+", () -> zoomBy(1.5f, w / 2.0, h / 2.0));
+        roundButton(g, zx, h - pad - r, r, "-", () -> {
+            if (threeD) view3d.zoom(-2);
+            else zoomBy(1 / 1.5f, w / 2.0, h / 2.0);
+        });
+        roundButton(g, zx - r * 2 - 3 * k, h - pad - r, r, "+", () -> {
+            if (threeD) view3d.zoom(2);
+            else zoomBy(1.5f, w / 2.0, h / 2.0);
+        });
 
         if (MapConfig.debug) {
             String debug = Minimap.debugLine();
@@ -232,6 +341,9 @@ public final class MapScreen extends Screen {
     private void centreOnPlayer() {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return;
+        view3d.targetX = p.getX();
+        view3d.targetY = p.getY();
+        view3d.targetZ = p.getZ();
         zooming = false;
         shownZoom = zoom;
         centreX = p.getX();
@@ -253,7 +365,8 @@ public final class MapScreen extends Screen {
     @Override
     public boolean mouseScrolled(double x, double y, double delta) {
         measureMouse();
-        zoomBy((float) Math.pow(1.3, delta), mouseX, mouseY);
+        if (threeD) view3d.zoom(delta);
+        else zoomBy((float) Math.pow(1.3, delta), mouseX, mouseY);
         return true;
     }
 
@@ -265,6 +378,12 @@ public final class MapScreen extends Screen {
             dragging = true;
             zooming = false;
             shownZoom = zoom;
+            lastX = mouseX;
+            lastY = mouseY;
+            return true;
+        }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && threeD) {
+            turning = true;
             lastX = mouseX;
             lastY = mouseY;
             return true;
@@ -302,6 +421,18 @@ public final class MapScreen extends Screen {
     @Override
     public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
         measureMouse();
+        if (turning) {
+            view3d.turn(mouseX - lastX, mouseY - lastY);
+            lastX = mouseX;
+            lastY = mouseY;
+            return true;
+        }
+        if (dragging && threeD) {
+            view3d.pan(mouseX - lastX, mouseY - lastY);
+            lastX = mouseX;
+            lastY = mouseY;
+            return true;
+        }
         if (dragging) {
             centreX -= (mouseX - lastX) / shownZoom;
             centreZ -= (mouseY - lastY) / shownZoom;
@@ -315,6 +446,7 @@ public final class MapScreen extends Screen {
     @Override
     public boolean mouseReleased(double x, double y, int button) {
         dragging = false;
+        turning = false;
         hits.release();
         return true;
     }

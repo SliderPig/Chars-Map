@@ -1,6 +1,6 @@
 # The closest test to really playing: starts the real game the way the Modrinth app does, with the same Forge and Embeddium, in a throwaway folder (run-real/).
 # The jar must be built with -Psmoke so ClientChecks is in it: it walks through everything, saves screenshots to run-real/screenshots and quits.
-#   gradlew build -Psmoke -x test   then   python tools/run_real_client.py [reopen] [fps=on|off] [extra=<jar>]
+#   gradlew build -Psmoke -x test   then   python tools/run_real_client.py [reopen] [fps=on|off] [join=host:port] [extra=<jar>]
 import glob
 import json
 import os
@@ -38,6 +38,7 @@ def library_path(lib):
 def main():
     reopen = 'reopen' in sys.argv
     fps = next((a[4:] for a in sys.argv if a.startswith('fps=')), '')
+    join = next((a[5:] for a in sys.argv if a.startswith('join=')), '')
     d = json.load(open(os.path.join(META, 'versions', VERSION, VERSION + '.json'), encoding='utf-8'))
     cp, seen = [], set()
     for lib in d['libraries']:
@@ -56,13 +57,13 @@ def main():
     lines = [line for line in lines if not line.startswith(('onboardAccessibility:', 'tutorialStep:'))] + ['onboardAccessibility:false', 'tutorialStep:none']
     with open(options, 'w', encoding='utf-8') as f:
         f.write(chr(10).join(lines) + chr(10))
-    if not reopen and not fps:
+    if not reopen and not fps and not join:
         shutil.rmtree(os.path.join(RUN, 'saves', 'smoke'), ignore_errors=True)
         shutil.rmtree(os.path.join(RUN, 'charmap'), ignore_errors=True)
     if os.path.exists(os.path.join(RUN, 'config', 'charmap.properties')):
         os.remove(os.path.join(RUN, 'config', 'charmap.properties'))
     shots = os.path.join(RUN, 'screenshots')
-    if not reopen and not fps:
+    if not reopen and not fps and not join:
         shutil.rmtree(shots, ignore_errors=True)
     for old in glob.glob(os.path.join(RUN, 'mods', '*.jar')):
         os.remove(old)
@@ -95,7 +96,7 @@ def main():
                 out.extend(fill(x) for x in ([v] if isinstance(v, str) else v))
         return out
 
-    flags = ['-Dcharmap.smokeclient=true'] + (['-Dcharmap.reopen=true'] if reopen else []) + (['-Dcharmap.fpsonly=' + fps] if fps else [])
+    flags = ['-Dcharmap.smokeclient=true'] + (['-Dcharmap.reopen=true'] if reopen else []) + (['-Dcharmap.fpsonly=' + fps] if fps else []) + (['-Dcharmap.join=' + join] if join else [])
     cmd = [JAVA, '-Xmx2500M'] + flags + flat(d['arguments']['jvm']) + [d['mainClass']] + flat(d['arguments']['game']) + ['--width', '1600', '--height', '900']
     with open(os.path.join(RUN, 'launch.log'), 'w', encoding='utf-8', errors='replace') as log:
         try:

@@ -10,11 +10,11 @@ import java.util.zip.Inflater;
 public final class TileCodec {
     private TileCodec() {}
 
-    private static final int MAGIC_BASE = 0x434D5431, MAGIC_LOD = 0x434D4C31;
+    private static final int MAGIC_BASE = 0x434D5431, MAGIC_LOD = 0x434D4C32;
     public static final int PIXELS = Coords.TILE * Coords.TILE;
 
     private static final int BASE_RAW = PIXELS * 3 + PIXELS * 2 + 1024 * 4 * 2 + Coords.TILE * 2 * 2;
-    private static final int LOD_RAW = PIXELS * 3;
+    private static final int LOD_RAW = PIXELS * 3 + PIXELS * 2;
 
     // The block-level tile: unshaded colours and heights, so hills can be worked out against whatever is next to them.
     public static final class Base {
@@ -80,26 +80,36 @@ public final class TileCodec {
         return t;
     }
 
-    // A far-away level: finished colours only.
-    public static byte[] encodeLod(int[] pixels) {
+    // A far-away level: finished colours, and average heights for the 3D view.
+    public static byte[] encodeLod(int[] pixels, short[] heights) {
         byte[] a = new byte[LOD_RAW];
         int n = PIXELS;
+        short last = 0;
+        int o = n * 3;
         for (int i = 0; i < n; i++) {
             a[i] = (byte) (pixels[i] >> 16);
             a[n + i] = (byte) (pixels[i] >> 8);
             a[n * 2 + i] = (byte) pixels[i];
+            short d = (short) (heights[i] - last);
+            last = heights[i];
+            a[o++] = (byte) (d >> 8);
+            a[o++] = (byte) d;
         }
         return pack(MAGIC_LOD, a);
     }
 
-    public static int[] decodeLod(byte[] file, int[] into) throws DataFormatException {
+    public static void decodeLod(byte[] file, int[] pixels, short[] heights) throws DataFormatException {
         byte[] a = unpack(file, MAGIC_LOD, LOD_RAW);
-        int n = PIXELS;
+        int n = PIXELS, o = n * 3;
+        short last = 0;
         for (int i = 0; i < n; i++) {
             int c = ((a[i] & 255) << 16) | ((a[n + i] & 255) << 8) | (a[n * 2 + i] & 255);
-            into[i] = c == 0 ? 0 : 0xFF000000 | c;
+            pixels[i] = c == 0 ? 0 : 0xFF000000 | c;
+            short d = (short) (((a[o] & 255) << 8) | (a[o + 1] & 255));
+            o += 2;
+            last = (short) (last + d);
+            heights[i] = last;
         }
-        return into;
     }
 
     private static byte[] pack(int magic, byte[] raw) {

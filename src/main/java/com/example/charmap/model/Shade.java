@@ -62,6 +62,16 @@ public final class Shade {
         return 0xFF000000 | ((r / count) << 16) | ((g / count) << 8) | (bl / count);
     }
 
+    // Same for heights.
+    public static short averageHeight(short a, short b, short c, short d) {
+        int count = 0, sum = 0;
+        if (a != NO_HEIGHT) { count++; sum += a; }
+        if (b != NO_HEIGHT) { count++; sum += b; }
+        if (c != NO_HEIGHT) { count++; sum += c; }
+        if (d != NO_HEIGHT) { count++; sum += d; }
+        return count == 0 ? NO_HEIGHT : (short) Math.floorDiv(sum, count);
+    }
+
     // Average colour of a list of texture pixels, ignoring see-through ones. Alpha of the result tells how solid it was.
     public static int averagePixels(int[] argb, int count) {
         long r = 0, g = 0, b = 0, a = 0;

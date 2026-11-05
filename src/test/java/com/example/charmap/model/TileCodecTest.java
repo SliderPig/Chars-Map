@@ -37,10 +37,17 @@ class TileCodecTest {
     @Test
     void farLevelSurvivesTheDisk() throws Exception {
         int[] pixels = new int[TileCodec.PIXELS];
+        short[] heights = new short[TileCodec.PIXELS];
+        java.util.Arrays.fill(heights, Shade.NO_HEIGHT);
         pixels[0] = 0xFF123456;
+        heights[0] = 70;
         pixels[TileCodec.PIXELS - 1] = 0xFF000001;
-        int[] back = TileCodec.decodeLod(TileCodec.encodeLod(pixels), new int[TileCodec.PIXELS]);
+        heights[TileCodec.PIXELS - 1] = -60;
+        int[] back = new int[TileCodec.PIXELS];
+        short[] backHeights = new short[TileCodec.PIXELS];
+        TileCodec.decodeLod(TileCodec.encodeLod(pixels, heights), back, backHeights);
         assertArrayEquals(pixels, back);
+        assertArrayEquals(heights, backHeights);
     }
 
     @Test
@@ -52,9 +59,11 @@ class TileCodecTest {
     @Test
     void junkFilesAreRefusedNotCrashedOn() {
         assertThrows(DataFormatException.class, () -> TileCodec.decodeBase(new byte[] {1, 2, 3, 4, 5, 6}));
-        assertThrows(DataFormatException.class, () -> TileCodec.decodeLod(new byte[0], new int[TileCodec.PIXELS]));
-        byte[] good = TileCodec.encodeLod(new int[TileCodec.PIXELS]);
+        int[] p = new int[TileCodec.PIXELS];
+        short[] h = new short[TileCodec.PIXELS];
+        assertThrows(DataFormatException.class, () -> TileCodec.decodeLod(new byte[0], p, h));
+        byte[] good = TileCodec.encodeLod(p, h);
         byte[] cut = java.util.Arrays.copyOf(good, good.length / 2);
-        assertThrows(DataFormatException.class, () -> TileCodec.decodeLod(cut, new int[TileCodec.PIXELS]));
+        assertThrows(DataFormatException.class, () -> TileCodec.decodeLod(cut, p, h));
     }
 }

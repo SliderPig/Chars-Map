@@ -115,7 +115,6 @@ public final class MapClient {
         forge.addListener(MapClient::onCommands);
         forge.addListener(MapClient::onQuit);
         forge.addListener(MapClient::onWorldRender);
-        forge.addListener(MapClient::onLevelUnload);
     }
 
     private static void onKeys(RegisterKeyMappingsEvent e) {
@@ -140,10 +139,6 @@ public final class MapClient {
 
     private static void onCommands(RegisterClientCommandsEvent e) {
         MapCommand.register(e.getDispatcher());
-    }
-
-    private static void onLevelUnload(net.minecraftforge.event.level.LevelEvent.Unload e) {
-        if (e.getLevel().isClientSide() && Minecraft.getInstance().level == e.getLevel() && Minecraft.getInstance().getConnection() == null) endSession(false);
     }
 
     private static void onLogin(ClientPlayerNetworkEvent.LoggingIn e) {

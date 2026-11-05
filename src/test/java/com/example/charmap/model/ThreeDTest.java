@@ -1,0 +1,142 @@
+package com.example.charmap.model;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class ThreeDTest {
+    private record Quad(float[] p, int colour) {
+        float[] normal() {
+            float ax = p[3] - p[0], ay = p[4] - p[1], az = p[5] - p[2], bx = p[6] - p[0], by = p[7] - p[1], bz = p[8] - p[2];
+            return new float[] {ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx};
+        }
+    }
+
+    private static List<Quad> mesh(int n, int cell, int[] colours, short[] heights) {
+        List<Quad> out = new ArrayList<>();
+        HeightMesh.build(n, cell, colours, heights, (x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, c) -> out.add(new Quad(new float[] {x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3}, c)));
+        return out;
+    }
+
+    private static int[] grid(int n, int value) {
+        int[] a = new int[(n + 2) * (n + 2)];
+        java.util.Arrays.fill(a, value);
+        return a;
+    }
+
+    private static short[] heights(int n, int value) {
+        short[] a = new short[(n + 2) * (n + 2)];
+        java.util.Arrays.fill(a, (short) value);
+        return a;
+    }
+
+    @Test
+    void flatGroundIsOnlyTops() {
+        List<Quad> q = mesh(4, 1, grid(4, 0xFF336633), heights(4, 64));
+        assertEquals(16, q.size());
+        for (Quad q1 : q) {
+            assertEquals(65f, q1.p[1]);
+            assertTrue(q1.normal()[1] > 0, "tops must face up, or back-face culling would hide them");
+        }
+    }
+
+    @Test
+    void aStepGetsAWallFacingOutward() {
+        int n = 3;
+        short[] h = heights(n, 64);
+        h[(1 + 1) * (n + 2) + 1 + 1] = 70; // the middle column is 6 higher
+        List<Quad> q = mesh(n, 1, grid(n, 0xFF808080), h);
+        assertEquals(9 + 4, q.size());
+        int walls = 0;
+        for (Quad w : q) {
+            float[] normal = w.normal();
+            if (normal[1] != 0) continue;
+            walls++;
+            // Facing away from the middle of the column at x 1.5, z 1.5
+            float mx = (w.p[0] + w.p[6]) / 2, mz = (w.p[2] + w.p[8]) / 2;
+            assertTrue(normal[0] * (mx - 1.5f) + normal[2] * (mz - 1.5f) > 0);
+            assertEquals(65f, Math.min(w.p[1], w.p[4]));
+            assertEquals(71f, Math.max(w.p[1], w.p[4]));
+        }
+        assertEquals(4, walls);
+    }
+
+    @Test
+    void unseenColumnsAreLeftOutAndGetAShortWallNextToThem() {
+        int n = 2;
+        int[] c = grid(n, 0xFF808080);
+        short[] h = heights(n, 64);
+        int at = (1 + 1) * (n + 2) + 1 + 1; // column 1,1
+        c[at] = 0;
+        h[at] = Shade.NO_HEIGHT;
+        List<Quad> q = mesh(n, 1, c, h);
+        long tops = q.stream().filter(k -> k.normal()[1] > 0).count();
+        assertEquals(3, tops);
+        assertTrue(q.size() > 3);
+    }
+
+    @Test
+    void widerColumnsCoverTheSamePatch() {
+        List<Quad> q = mesh(2, 8, grid(2, 0xFF808080), heights(2, 10));
+        float max = 0;
+        for (Quad k : q) for (int i = 0; i < 12; i += 3) max = Math.max(max, k.p[i]);
+        assertEquals(16f, max);
+    }
+
+    @Test
+    void patchesGetCoarserWithDistanceAndCoverTheView() {
+        List<Long> keys = PatchPlan.select(0, 150, 0, 0, 0, 4096, (a, b, c, d) -> true, 0);
+        assertFalse(keys.isEmpty());
+        int nearLevel = 99, farLevel = -1;
+        for (long k : keys) {
+            int size = PatchPlan.blocks(Coords.keyLevel(k));
+            double cx = (Coords.keyX(k) + 0.5) * size, cz = (Coords.keyZ(k) + 0.5) * size;
+            if (Math.hypot(cx, cz) < 150) nearLevel = Math.min(nearLevel, Coords.keyLevel(k));
+            farLevel = Math.max(farLevel, Coords.keyLevel(k));
+        }
+        assertTrue(nearLevel <= 1);
+        assertTrue(farLevel >= 4);
+        // Coarse ones come first so the whole view shows at once
+        assertEquals(farLevel, Coords.keyLevel(keys.get(0)));
+    }
+
+    @Test
+    void offScreenPatchesAreSkipped() {
+        List<Long> keys = PatchPlan.select(0, 150, 0, 0, 0, 4096, (minX, minZ, maxX, maxZ) -> maxX > 0, 0);
+        for (long k : keys) assertTrue(Coords.keyX(k) >= 0);
+    }
+
+    @Test
+    void ancestorCoversItsChild() {
+        long child = Coords.key(0, 1, -3, 5);
+        long up = PatchPlan.ancestor(child, 2);
+        assertEquals(3, Coords.keyLevel(up));
+        assertEquals(-1, Coords.keyX(up));
+        assertEquals(1, Coords.keyZ(up));
+        assertEquals(PatchPlan.COARSEST, Coords.keyLevel(PatchPlan.ancestor(Coords.key(0, 6, 0, 0), 5)));
+    }
+
+    @Test
+    void frameStatsReportTheSlowEnd() {
+        FrameStats s = new FrameStats();
+        for (int i = 0; i < 99; i++) s.add(100_000L);
+        s.add(30_000_000L);
+        assertEquals(100, s.frames());
+        assertEquals(0.15, s.percentileMillis(0.99), 0.001);
+        assertEquals(30.0, s.worstMillis(), 0.001);
+        assertTrue(s.averageMillis() > 0.3 && s.averageMillis() < 0.5);
+        s.reset();
+        assertEquals(0, s.frames());
+        assertEquals(0, s.worstMillis());
+    }
+
+    @Test
+    void averageHeightIgnoresUnknown() {
+        assertEquals(10, Shade.averageHeight((short) 10, Shade.NO_HEIGHT, Shade.NO_HEIGHT, Shade.NO_HEIGHT));
+        assertEquals(15, Shade.averageHeight((short) 10, (short) 20, Shade.NO_HEIGHT, Shade.NO_HEIGHT));
+        assertEquals(Shade.NO_HEIGHT, Shade.averageHeight(Shade.NO_HEIGHT, Shade.NO_HEIGHT, Shade.NO_HEIGHT, Shade.NO_HEIGHT));
+        assertEquals(-5, Shade.averageHeight((short) -5, (short) -5, (short) -5, (short) -5));
+    }
+}

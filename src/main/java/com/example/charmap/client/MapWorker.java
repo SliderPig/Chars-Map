@@ -3,8 +3,13 @@ package com.example.charmap.client;
 import com.example.charmap.CharMap;
 import com.example.charmap.model.ChunkSummary;
 import com.example.charmap.model.Coords;
+import com.example.charmap.model.HeightMesh;
+import com.example.charmap.model.PatchPlan;
 import com.example.charmap.model.Shade;
 import com.example.charmap.model.TileCodec;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
@@ -62,6 +67,7 @@ public final class MapWorker implements Runnable {
         final int level;
         TileCodec.Base base;   // level 0
         int[] pixels;          // higher levels
+        short[] heights;       // higher levels
         boolean unsaved;
         int dirtyX0 = Integer.MAX_VALUE, dirtyY0, dirtyX1, dirtyY1;
         long unsavedSince;
@@ -80,8 +86,13 @@ public final class MapWorker implements Runnable {
             return Shade.hills(b.colour[i], b.height[i], north, west);
         }
 
+        short height(int x, int y) {
+            int i = y * Coords.TILE + x;
+            return level > 0 ? heights[i] : base.height[i];
+        }
+
         long bytes() {
-            return level > 0 ? 1_048_576 : 1_572_864;
+            return 1_572_864;
         }
 
         void markDirty(int x0, int y0, int x1, int y1) {
@@ -198,6 +209,56 @@ public final class MapWorker implements Runnable {
     public void run(Runnable task) {
         tasks.add(task);
         LockSupport.unpark(thread);
+    }
+
+    // One patch of the 3D view, built here so the game never waits for it.
+    public void buildPatch(long key, BufferBuilder builder) {
+        run(() -> {
+            float[] range = {Float.MAX_VALUE, -Float.MAX_VALUE};
+            int quads = 0;
+            BufferBuilder.RenderedBuffer data = null;
+            try {
+                int layer = Coords.keyLayer(key), level = Coords.keyLevel(key), n = PatchPlan.CELLS, cell = 1 << level, size = n + 2;
+                int use = Math.min(level, Coords.MAX_LEVEL);
+                int ox = Coords.keyX(key) * n * cell, oz = Coords.keyZ(key) * n * cell;
+                int[] colour = new int[size * size];
+                short[] height = new short[size * size];
+                long lastKey = Long.MIN_VALUE;
+                Tile t = null;
+                for (int j = 0, o = 0; j < size; j++) {
+                    int bz = oz + (j - 1) * cell;
+                    for (int i = 0; i < size; i++, o++) {
+                        int bx = ox + (i - 1) * cell;
+                        long k = Coords.key(layer, use, Coords.tileAt(bx, use), Coords.tileAt(bz, use));
+                        if (k != lastKey) {
+                            lastKey = k;
+                            t = tile(k, false);
+                        }
+                        if (t == null) {
+                            height[o] = Shade.NO_HEIGHT;
+                            continue;
+                        }
+                        int x = (bx >> use) & 511, z = (bz >> use) & 511;
+                        colour[o] = t.pixel(x, z);
+                        height[o] = t.height(x, z);
+                    }
+                }
+                builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+                quads = HeightMesh.build(n, cell, colour, height, (x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, c) -> {
+                    int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+                    builder.vertex(x0, y0, z0).color(r, g, b, 255).endVertex();
+                    builder.vertex(x1, y1, z1).color(r, g, b, 255).endVertex();
+                    builder.vertex(x2, y2, z2).color(r, g, b, 255).endVertex();
+                    builder.vertex(x3, y3, z3).color(r, g, b, 255).endVertex();
+                    range[0] = Math.min(range[0], Math.min(y0, y2));
+                    range[1] = Math.max(range[1], Math.max(y0, y2));
+                });
+                data = builder.end();
+            } catch (Throwable e) {
+                CharMap.once("patch", "Couldn't build a 3D map patch", e);
+            }
+            Map3D.DONE.add(new Map3D.Built(key, builder, data, range[0], range[1], quads));
+        });
     }
 
     // Empties the current dimension's map, memory and disk.
@@ -437,6 +498,7 @@ public final class MapWorker implements Runnable {
         }
         chunksColoured++;
         unsaved(t);
+        if (Map3D.open) staleAround(layer, chunkX, chunkZ);
 
         // Hills depend on the neighbour to the north and west, also across tile edges.
         if (x0 == 0) {
@@ -468,6 +530,15 @@ public final class MapWorker implements Runnable {
         }
     }
 
+    // Tells the 3D view which of its patches just changed.
+    private static void staleAround(int layer, int chunkX, int chunkZ) {
+        int bx = chunkX * 16, bz = chunkZ * 16;
+        for (int level = 0; level <= PatchPlan.COARSEST; level++) {
+            int size = PatchPlan.blocks(level);
+            Map3D.STALE.add(Coords.key(layer, level, Math.floorDiv(bx, size), Math.floorDiv(bz, size)));
+        }
+    }
+
     private void unsaved(Tile t) {
         if (!t.unsaved) {
             t.unsaved = true;
@@ -489,6 +560,7 @@ public final class MapWorker implements Runnable {
             int o = (offZ + y / 2) * Coords.TILE + offX;
             for (int x = ax0; x < ax1; x += 2) {
                 p.pixels[o + x / 2] = Shade.average4(t.pixel(x, y), t.pixel(x + 1, y), t.pixel(x, y + 1), t.pixel(x + 1, y + 1));
+                p.heights[o + x / 2] = Shade.averageHeight(t.height(x, y), t.height(x + 1, y), t.height(x, y + 1), t.height(x + 1, y + 1));
             }
         }
         unsaved(p);
@@ -513,8 +585,11 @@ public final class MapWorker implements Runnable {
             }
             missing.remove(key);
             t = new Tile(key);
-            if (t.level > 0) t.pixels = new int[TileCodec.PIXELS];
-            else t.base = new TileCodec.Base();
+            if (t.level > 0) {
+                t.pixels = new int[TileCodec.PIXELS];
+                t.heights = new short[TileCodec.PIXELS];
+                java.util.Arrays.fill(t.heights, Shade.NO_HEIGHT);
+            } else t.base = new TileCodec.Base();
         }
         tiles.put(key, t);
         memory += t.bytes();
@@ -537,8 +612,11 @@ public final class MapWorker implements Runnable {
         }
         try {
             Tile t = new Tile(key);
-            if (t.level > 0) t.pixels = TileCodec.decodeLod(file, new int[TileCodec.PIXELS]);
-            else t.base = TileCodec.decodeBase(file);
+            if (t.level > 0) {
+                t.pixels = new int[TileCodec.PIXELS];
+                t.heights = new short[TileCodec.PIXELS];
+                TileCodec.decodeLod(file, t.pixels, t.heights);
+            } else t.base = TileCodec.decodeBase(file);
             tilesLoaded++;
             tilesLoadedFromDisk++;
             loadNanos += System.nanoTime() - before;
@@ -580,7 +658,7 @@ public final class MapWorker implements Runnable {
         t.unsaved = false;
         Path path = pathOf(t.key);
         try {
-            byte[] bytes = t.level > 0 ? TileCodec.encodeLod(t.pixels) : TileCodec.encodeBase(t.base);
+            byte[] bytes = t.level > 0 ? TileCodec.encodeLod(t.pixels, t.heights) : TileCodec.encodeBase(t.base);
             Files.createDirectories(path.getParent());
             Path temp = path.resolveSibling(path.getFileName() + ".tmp");
             Files.write(temp, bytes);
