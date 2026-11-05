@@ -21,6 +21,13 @@ public final class McaFile {
         return new McaFile(Files.readAllBytes(path));
     }
 
+    // Just the table at the start of the file: enough for has and timestamp, tiny to read.
+    public static McaFile readTable(Path path) throws IOException {
+        try (InputStream in = Files.newInputStream(path)) {
+            return new McaFile(in.readNBytes(8192));
+        }
+    }
+
     private int offsetEntry(int index) {
         int o = index * 4;
         return ((file[o] & 255) << 16) | ((file[o + 1] & 255) << 8) | (file[o + 2] & 255);

@@ -60,6 +60,7 @@ public final class Filler {
         if (!MapConfig.fillEnabled || running) return;
         long now = System.currentTimeMillis();
         if (now < nextAuto) return;
+        if (Minimap.movingFast()) return; // not while flying: that can wait until you slow down
         if (!MapClient.isHost()) {
             // Once per world and dimension: the server sends everything generated, nearest first, a little at a time.
             nextAuto = Long.MAX_VALUE;
@@ -195,6 +196,11 @@ public final class Filler {
     private static void fillRegion(MapWorker worker, Path file, FillOrder.Region r, int[] stamps, int bx, int bz, int ceiling) throws InterruptedException {
         McaFile mca;
         try {
+            // Nothing newer than what the map has? Then the rest of the file needn't be read at all.
+            McaFile table = McaFile.readTable(file);
+            boolean any = false;
+            for (int i = 0; i < 1024 && !any; i++) any = table.has(i) && (stamps == null || stamps[i] == 0 || table.timestamp(i) > stamps[i]);
+            if (!any) return;
             mca = McaFile.read(file);
         } catch (IOException | RuntimeException e) {
             CharMap.once("fill-read", "Couldn't read a region file: " + file, e);

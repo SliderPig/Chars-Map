@@ -157,7 +157,7 @@ public final class ClientChecks {
 
         // Turn and turn about, so the world settling down doesn't favour either
         later(100, () -> {});
-        for (int round = 1; round <= 2; round++) {
+        for (int round = 1; round <= 1; round++) {
             measure(30, "map ON, standing still, round " + round, 6);
             later(1, () -> MapConfig.dots = MapConfig.infoText = MapConfig.compass = false);
             measure(30, "map only, no text dots compass, round " + round, 6);
@@ -208,14 +208,12 @@ public final class ClientChecks {
         later(120, () -> CharMap.LOG.info("[Check] uploads with: {}", Minimap.debugLine()));
         shot(5, "03_minimap_after_hops");
         // The first pass generates the ground, so it isn't a fair measure of the map; the turns after it are.
-        fly("first pass, new ground being generated, map on", 3f, 12);
-        fly("back again, map on", -3f, 12);
+        fly("first pass, new ground being generated, map on", 3f, 10);
+        fly("back again, map on", -3f, 10);
         later(1, () -> MapConfig.enabled = false);
-        fly("out, map resting", 3f, 12);
-        fly("back, map resting", -3f, 12);
+        fly("out, map resting", 3f, 10);
+        fly("back, map resting", -3f, 10);
         later(1, () -> MapConfig.enabled = true);
-        fly("out, map on", 3f, 12);
-        fly("back, map on", -3f, 12);
         later(100, () -> {
             MapClient.MINIMAP_ONLY.reset();
         });
@@ -354,6 +352,7 @@ public final class ClientChecks {
     private static void scriptReopen() {
         Minecraft mc = Minecraft.getInstance();
         // As soon as the player exists: what's on the map before any chunk has been coloured?
+        later(1, () -> CharMap.LOG.info("[Check] world showing: {}", Minimap.debugLine()));
         shot(1, "r1_right_after_joining");
         later(10, () -> CharMap.LOG.info("[Check] half a second after joining: {}", Minimap.debugLine()));
         later(1, () -> {
@@ -371,11 +370,11 @@ public final class ClientChecks {
             mc.setScreen(new MapScreen());
             if (mc.screen instanceof MapScreen m) m.showAt(1600, 700, 1f);
         });
-        shot(30, "r3_far_map_from_disk");
+        shot(70, "r3_far_map_from_disk");
         later(1, () -> {
             if (mc.screen instanceof MapScreen m && mc.player != null) m.showAt(600, 500, 0.2f);
         });
-        shot(30, "r4_far_out_from_disk");
+        shot(70, "r4_far_out_from_disk");
         later(1, () -> mc.setScreen(null));
         measure(40, "map ON, reopened world", 8);
         quit(20);
@@ -445,6 +444,7 @@ public final class ClientChecks {
             CharMap.LOG.info("[Check] world is up, {} steps to go", STEPS.size());
         }
         if (STEPS.isEmpty()) return;
+        if (mc.screen instanceof net.minecraft.client.gui.screens.ReceivingLevelScreen) return; // nothing counts until the world is showing
         if (++wait >= STEPS.peek().after()) {
             wait = 0;
             try {

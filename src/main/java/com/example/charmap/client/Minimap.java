@@ -65,8 +65,13 @@ public final class Minimap {
         biome = mc.level.getBiome(at).unwrapKey().map(k -> prettyBiome(k.location().getNamespace(), k.location().getPath())).orElse("");
         NEAR.clear();
         if (MapConfig.dots) {
+            MapClient.Session s = MapClient.session;
+            boolean surface = s != null && s.layer == 0 && !s.ceiling, slice = s != null && s.layer != 0;
             for (Entity e : mc.level.entitiesForRendering()) {
                 if (e == p || !(e instanceof LivingEntity) || e.isInvisible()) continue;
+                // A map of the surface shouldn't be covered in bats and zombies from the caves below it; a cave map only shows who's on about your level.
+                if (surface && !(e instanceof Player) && e.getY() < mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, e.getBlockX(), e.getBlockZ()) - 6) continue;
+                if (slice && Math.abs(e.getY() - p.getY()) > 24) continue;
                 NEAR.add(e);
             }
             // Nearest first: when there are too many, the far ones are the ones to leave off.
@@ -173,7 +178,7 @@ public final class Minimap {
         float ppb = MapConfig.pixelsPerBlock();
 
         // The picture holds the map, ring, faces and text, with room round the sides for names that hang over.
-        int padX = 130, padY = 12;
+        int padX = padFor(mc, s, size), padY = 12;
         int w = Math.round(size) + padX * 2, h = Math.round(size) + padY * 2 + Math.round(textRows) + 8;
         float localX = padX + half, localY = padY + half;
 
@@ -213,6 +218,13 @@ public final class Minimap {
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
         g.pose().popPose();
+    }
+
+    private static int padFor(Minecraft mc, MapClient.Session s, float size) {
+        if (!Teammates.list().isEmpty() || (MapConfig.playerNames && mc.level.players().size() > 1)) return 130;
+        if (!MapConfig.infoText) return 14;
+        int wide = Math.max(Ui.width(biome), Ui.width(coords.isEmpty() ? "-00000, 000, -00000" : coords + "00")) + Math.round(6 * Ui.scale());
+        return wide <= size ? 14 : wide <= size + 128 ? 78 : 130;
     }
 
     private static void blit(GuiGraphics g, float x0, float y0, int w, int h) {
