@@ -320,6 +320,12 @@ public final class MapClient {
         }
     }
 
+    // Everything loaded round you gets looked at again: after the map's been cleared there's no waiting for the slow sweep.
+    public static void lookAgain() {
+        Minecraft mc = Minecraft.getInstance();
+        if (session != null && mc.player != null) queueAround(session, mc.player.chunkPosition(), mc.options.getEffectiveRenderDistance() + 1);
+    }
+
     private static void queueAround(Session s, ChunkPos at, int r) {
         for (int z = -r; z <= r; z++) for (int x = -r; x <= r; x++) s.pending.add(ChunkPos.asLong(at.x + x, at.z + z));
     }

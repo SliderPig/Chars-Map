@@ -251,6 +251,7 @@ public final class ClientChecks {
             MapClient.Session s = MapClient.session;
             s.textures.clearAll();
             s.worker.clearAll(() -> CharMap.LOG.info("[Check] map wiped"));
+            MapClient.lookAgain();
         });
         later(20, () -> Filler.fillNow(true));
         shot(8, "07_fill_progress");

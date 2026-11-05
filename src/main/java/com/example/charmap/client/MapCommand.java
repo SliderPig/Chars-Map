@@ -26,6 +26,7 @@ final class MapCommand {
                     Filler.stop();
                     s.textures.clearAll();
                     s.worker.clearAll(() -> {});
+                    MapClient.lookAgain();
                     say("This dimension's map is cleared. It will fill back in from what you see.");
                     return 1;
                 }))
