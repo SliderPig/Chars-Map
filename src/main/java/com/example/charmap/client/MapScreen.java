@@ -29,7 +29,7 @@ public final class MapScreen extends Screen {
     private Waypoint menuWaypoint;
     private static boolean threeD;
     private final Map3D view3d = new Map3D();
-    private boolean turning;
+    private boolean turning, cameraSet;
 
     public MapScreen() {
         super(Component.literal("World map"));
@@ -176,7 +176,8 @@ public final class MapScreen extends Screen {
 
     public void set3D(boolean on) {
         Minecraft mc = Minecraft.getInstance();
-        if (on && !threeD) {
+        if (on && !threeD && !cameraSet) {
+            cameraSet = true;
             double y = mc.player == null ? 64 : mc.player.getY();
             float h = mc.getWindow().getHeight();
             view3d.look(centreX, y, centreZ, Math.max(30, h / (2 * (float) Math.tan(Math.toRadians(30))) / shownZoom));
@@ -186,6 +187,7 @@ public final class MapScreen extends Screen {
             centreZ = view3d.targetZ;
             view3d.close();
             zooming = false;
+            cameraSet = false;
         }
         threeD = on;
     }

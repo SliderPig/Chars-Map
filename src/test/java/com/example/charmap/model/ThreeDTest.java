@@ -33,13 +33,23 @@ class ThreeDTest {
     }
 
     @Test
-    void flatGroundIsOnlyTops() {
+    void flatGroundIsTopsWithALittleSkirtRoundTheEdge() {
         List<Quad> q = mesh(4, 1, grid(4, 0xFF336633), heights(4, 64));
-        assertEquals(16, q.size());
-        for (Quad q1 : q) {
-            assertEquals(65f, q1.p[1]);
-            assertTrue(q1.normal()[1] > 0, "tops must face up, or back-face culling would hide them");
+        int tops = 0, skirts = 0;
+        for (Quad k : q) {
+            if (k.normal()[1] > 0) {
+                tops++;
+                assertEquals(65f, k.p[1]);
+            } else {
+                skirts++;
+                // Only round the outside of the patch, one block deep, to hide gaps to a coarser patch next door
+                boolean rim = (k.p[0] == 0 && k.p[6] == 0) || (k.p[0] == 4 && k.p[6] == 4) || (k.p[2] == 0 && k.p[8] == 0) || (k.p[2] == 4 && k.p[8] == 4);
+                assertTrue(rim);
+                assertEquals(64f, Math.min(k.p[1], k.p[4]));
+            }
         }
+        assertEquals(16, tops, "tops must face up, or back-face culling would hide them");
+        assertEquals(16, skirts);
     }
 
     @Test
@@ -48,17 +58,15 @@ class ThreeDTest {
         short[] h = heights(n, 64);
         h[(1 + 1) * (n + 2) + 1 + 1] = 70; // the middle column is 6 higher
         List<Quad> q = mesh(n, 1, grid(n, 0xFF808080), h);
-        assertEquals(9 + 4, q.size());
         int walls = 0;
         for (Quad w : q) {
             float[] normal = w.normal();
-            if (normal[1] != 0) continue;
+            if (normal[1] != 0 || Math.max(w.p[1], w.p[4]) != 71f) continue;
             walls++;
             // Facing away from the middle of the column at x 1.5, z 1.5
             float mx = (w.p[0] + w.p[6]) / 2, mz = (w.p[2] + w.p[8]) / 2;
             assertTrue(normal[0] * (mx - 1.5f) + normal[2] * (mz - 1.5f) > 0);
             assertEquals(65f, Math.min(w.p[1], w.p[4]));
-            assertEquals(71f, Math.max(w.p[1], w.p[4]));
         }
         assertEquals(4, walls);
     }

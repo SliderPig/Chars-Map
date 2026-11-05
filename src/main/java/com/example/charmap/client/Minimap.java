@@ -93,7 +93,8 @@ public final class Minimap {
     public static void render(GuiGraphics g, float partial) {
         Minecraft mc = Minecraft.getInstance();
         MapClient.Session s = MapClient.session;
-        if (s == null || !MapConfig.enabled || !MapConfig.showMinimap || mc.player == null || mc.options.hideGui) return;
+        // Under the full-screen map nobody can see it.
+        if (s == null || !MapConfig.enabled || !MapConfig.showMinimap || mc.player == null || mc.options.hideGui || mc.screen instanceof MapScreen) return;
         long start = System.nanoTime();
         try {
             draw(g, mc, s, partial);
