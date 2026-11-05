@@ -1,0 +1,28 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+authors="Char"
+modId="charmap"
+version="${file.jarVersion}"
+displayName="{C} Char's Map"
+# Only your own PC needs it. A server can have it too (it can then send map data to ops), but nobody has to.
+displayTest="IGNORE_ALL_VERSION"
+description='''
+A fast minimap and world map. Waypoints, teammates, and it can fill the map from chunks that are already generated.
+'''
+
+[[dependencies.charmap]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.charmap]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.21)"
+ordering="NONE"
+side="BOTH"

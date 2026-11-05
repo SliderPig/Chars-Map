@@ -1,0 +1,9 @@
+{
+  "key.categories.charmap": "Char's Map",
+  "key.charmap.world_map": "World map",
+  "key.charmap.add_waypoint": "Add waypoint",
+  "key.charmap.waypoints": "Waypoint list",
+  "key.charmap.zoom_in": "Minimap zoom in",
+  "key.charmap.zoom_out": "Minimap zoom out",
+  "key.charmap.toggle": "Show or hide the minimap"
+}
