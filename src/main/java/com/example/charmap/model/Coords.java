@@ -87,6 +87,20 @@ public final class Coords {
         return level;
     }
 
+    // Layers: 0 is the view from the sky (or under the roof in the Nether), the rest are 16-block slices for caves.
+    public static int layerForY(int y) {
+        return Math.max(1, Math.min(63, (y >> 4) + 8));
+    }
+
+    // The slice's scan starts at the top of the 16 blocks you are in, plus a little, so a low ceiling doesn't hide the room.
+    public static int layerTopY(int layer) {
+        return (layer - 8) * 16 + 18;
+    }
+
+    public static String layerFolder(int layer) {
+        return layer == 0 ? "surface" : "y" + (layer - 8) * 16;
+    }
+
     public static String safeName(String raw) {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < raw.length() && out.length() < 80; i++) {
