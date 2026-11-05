@@ -212,13 +212,13 @@ public final class MapWorker implements Runnable {
     }
 
     // One patch of the 3D view, built here so the game never waits for it.
-    public void buildPatch(long key, BufferBuilder builder) {
+    public void buildPatch(long key, BufferBuilder builder, int blocksMask) {
         run(() -> {
             float[] range = {Float.MAX_VALUE, -Float.MAX_VALUE};
             int quads = 0;
             BufferBuilder.RenderedBuffer data = null;
             try {
-                int layer = Coords.keyLayer(key), level = Coords.keyLevel(key), n = PatchPlan.CELLS, cell = 1 << level, size = n + 2;
+                int layer = Coords.keyLayer(key), level = Coords.keyLevel(key), n = PatchPlan.CELLS, cell = 1 << level, border = HeightMesh.BORDER, size = n + 2 * border;
                 int use = Math.min(level, Coords.MAX_LEVEL);
                 int ox = Coords.keyX(key) * n * cell, oz = Coords.keyZ(key) * n * cell;
                 int[] colour = new int[size * size];
@@ -226,9 +226,9 @@ public final class MapWorker implements Runnable {
                 long lastKey = Long.MIN_VALUE;
                 Tile t = null;
                 for (int j = 0, o = 0; j < size; j++) {
-                    int bz = oz + (j - 1) * cell;
+                    int bz = oz + (j - border) * cell;
                     for (int i = 0; i < size; i++, o++) {
-                        int bx = ox + (i - 1) * cell;
+                        int bx = ox + (i - border) * cell;
                         long k = Coords.key(layer, use, Coords.tileAt(bx, use), Coords.tileAt(bz, use));
                         if (k != lastKey) {
                             lastKey = k;
@@ -243,13 +243,23 @@ public final class MapWorker implements Runnable {
                         height[o] = t.height(x, z);
                     }
                 }
+                // Where real blocks are already showing, this patch leaves a hole.
+                if (blocksMask != 0 && level == 0) {
+                    for (int j = 0; j < n; j++) {
+                        for (int i = 0; i < n; i++) {
+                            if ((blocksMask & (1 << ((j >> 4) * 4 + (i >> 4)))) != 0) {
+                                int o = (j + border) * size + i + border;
+                                colour[o] = 0;
+                            }
+                        }
+                    }
+                }
                 builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-                quads = HeightMesh.build(n, cell, colour, height, (x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, c) -> {
-                    int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
-                    builder.vertex(x0, y0, z0).color(r, g, b, 255).endVertex();
-                    builder.vertex(x1, y1, z1).color(r, g, b, 255).endVertex();
-                    builder.vertex(x2, y2, z2).color(r, g, b, 255).endVertex();
-                    builder.vertex(x3, y3, z3).color(r, g, b, 255).endVertex();
+                quads = HeightMesh.build(n, cell, border, colour, height, (x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, c0, c1, c2, c3) -> {
+                    vertex(builder, x0, y0, z0, c0);
+                    vertex(builder, x1, y1, z1, c1);
+                    vertex(builder, x2, y2, z2, c2);
+                    vertex(builder, x3, y3, z3, c3);
                     range[0] = Math.min(range[0], Math.min(y0, y2));
                     range[1] = Math.max(range[1], Math.max(y0, y2));
                 });
@@ -257,8 +267,12 @@ public final class MapWorker implements Runnable {
             } catch (Throwable e) {
                 CharMap.once("patch", "Couldn't build a 3D map patch", e);
             }
-            Map3D.DONE.add(new Map3D.Built(key, builder, data, range[0], range[1], quads));
+            Map3D.DONE.add(new Map3D.Built(key, builder, data, range[0], range[1], quads, blocksMask));
         });
+    }
+
+    private static void vertex(BufferBuilder b, float x, float y, float z, int c) {
+        b.vertex(x, y, z).color((c >> 16) & 255, (c >> 8) & 255, c & 255, 255).endVertex();
     }
 
     // Empties the current dimension's map, memory and disk.

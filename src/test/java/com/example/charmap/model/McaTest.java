@@ -264,6 +264,64 @@ class McaTest {
     }
 
     @Test
+    void realBlocksComeOutOfASaveWithTheirShape() throws Exception {
+        VoxelChunk v = VoxelChunk.fromNbt(Nbt.read(nbt(chunk(4, 2))));
+        assertEquals(4, v.chunkX);
+        assertEquals(2, v.chunkZ);
+        // Lowest ground: the stone at 63 on most columns, sand at 60 under the water: 6 below that, not below the bottom of what's saved (48)
+        assertEquals(54, v.minY);
+        assertEquals(69 - 54 + 1, v.height);
+        int grass = v.cells[VoxelChunk.index(1, 69 - v.minY, 2)];
+        assertEquals("minecraft:grass_block[snowy=false]", v.palette[grass]);
+        int water = v.cells[VoxelChunk.index(3, 62 - v.minY, 4)];
+        assertEquals("minecraft:water[level=0]", v.palette[water]);
+        assertEquals(0, v.cells[VoxelChunk.index(1, 69 - v.minY, 3)]);
+        assertEquals("minecraft:air", v.palette[0]);
+        assertTrue(v.biomes.length >= 1);
+    }
+
+    @Test
+    void blockDataSurvivesTheDisk() throws Exception {
+        VoxelChunk v = VoxelChunk.fromNbt(Nbt.read(nbt(chunk(-4, 9))));
+        v.stamp = 1234;
+        VoxelChunk b = VoxelChunk.decode(v.encode());
+        assertEquals(-4, b.chunkX);
+        assertEquals(9, b.chunkZ);
+        assertEquals(v.minY, b.minY);
+        assertEquals(v.height, b.height);
+        assertEquals(1234, b.stamp);
+        assertArrayEquals(v.palette, b.palette);
+        assertArrayEquals(v.cells, b.cells);
+        assertArrayEquals(v.biomes, b.biomes);
+        assertArrayEquals(v.biome16, b.biome16);
+        assertTrue(v.encode().length < 2000);
+    }
+
+    @Test
+    void theBlockFileKeepsChunksApartAndReusesTheirPlace() throws Exception {
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("charmap-test");
+        java.nio.file.Path f = dir.resolve("sub").resolve("v.0.0.cvx");
+        assertNull(VoxelFile.read(f, 3));
+        byte[] a = {1, 2, 3, 4}, b = {9, 9};
+        assertTrue(VoxelFile.write(f, 3, a));
+        assertTrue(VoxelFile.write(f, 7, b));
+        assertArrayEquals(a, VoxelFile.read(f, 3));
+        assertArrayEquals(b, VoxelFile.read(f, 7));
+        assertNull(VoxelFile.read(f, 5));
+        assertFalse(VoxelFile.write(f, 3, a), "same data, nothing to write");
+        long size = java.nio.file.Files.size(f);
+        byte[] smaller = {5, 6};
+        assertTrue(VoxelFile.write(f, 3, smaller));
+        assertEquals(size, java.nio.file.Files.size(f));
+        assertArrayEquals(smaller, VoxelFile.read(f, 3));
+        assertArrayEquals(b, VoxelFile.read(f, 7));
+        byte[] bigger = {7, 7, 7, 7, 7, 7};
+        assertTrue(VoxelFile.write(f, 7, bigger));
+        assertArrayEquals(bigger, VoxelFile.read(f, 7));
+        assertArrayEquals(smaller, VoxelFile.read(f, 3));
+    }
+
+    @Test
     void packedValuesKeepToTheSaveFormat() {
         assertEquals(4, ChunkSummary.bitsFor(2, 4));
         assertEquals(5, ChunkSummary.bitsFor(17, 4));

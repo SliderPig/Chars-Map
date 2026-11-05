@@ -50,6 +50,7 @@ public final class ClientChecks {
     private static final boolean REOPEN = Boolean.getBoolean("charmap.reopen");
     private static final String FPS_ONLY = System.getProperty("charmap.fpsonly", "");
     private static final String JOIN = System.getProperty("charmap.join", "");
+    private static final boolean VILLAGE = Boolean.getBoolean("charmap.village");
 
     private record Step(int after, Runnable what) {}
 
@@ -305,14 +306,14 @@ public final class ClientChecks {
             MapScreen m = new MapScreen();
             mc.setScreen(m);
             m.set3D(true);
-            m.view3d().distance = 260;
+            m.view3d().look(m.view3d().targetX, m.view3d().targetY, m.view3d().targetZ, 260);
             m.view3d().pitch = 0.75f;
         });
         shot(60, "20_3d_near");
         measure(1, "3D view near", 5);
         later(1, () -> {
             if (mc.screen instanceof MapScreen m) {
-                m.view3d().distance = 1400;
+                m.view3d().look(m.view3d().targetX, m.view3d().targetY, m.view3d().targetZ, 1400);
                 m.view3d().yaw = 0.8f;
             }
         });
@@ -321,7 +322,7 @@ public final class ClientChecks {
         later(1, () -> {
             if (mc.screen instanceof MapScreen m) {
                 CharMap.LOG.info("[Check] 3D: {} patches drawn, {} MB", m.view3d().drawnLast, m.view3d().memoryBytes() / 1048576);
-                m.view3d().distance = 60;
+                m.view3d().look(m.view3d().targetX, m.view3d().targetY, m.view3d().targetZ, 60);
                 m.view3d().pitch = 0.4f;
             }
         });
@@ -381,6 +382,59 @@ public final class ClientChecks {
         quit(20);
     }
 
+    private static BlockPos villageAt;
+
+    private static void view3D(float yaw, float pitch, float distance) {
+        if (Minecraft.getInstance().screen instanceof MapScreen m && villageAt != null) {
+            m.view3d().yaw = yaw;
+            m.view3d().pitch = pitch;
+            m.view3d().look(villageAt.getX(), m.view3d().targetY, villageAt.getZ(), distance);
+        }
+    }
+
+    // A real village, seen in 3D from several sides.
+    private static void scriptVillage() {
+        Minecraft mc = Minecraft.getInstance();
+        later(60, () -> {
+            var server = mc.getSingleplayerServer();
+            server.execute(() -> {
+                ServerLevel level = server.overworld();
+                ServerPlayer p = server.getPlayerList().getPlayers().get(0);
+                p.setGameMode(GameType.CREATIVE);
+                p.getAbilities().flying = true;
+                p.onUpdateAbilities();
+                level.setDayTime(6000);
+                BlockPos found = level.findNearestMapStructure(net.minecraft.tags.StructureTags.VILLAGE, p.blockPosition(), 100, false);
+                CharMap.LOG.info("[Check] village at {}", found);
+                if (found != null) {
+                    villageAt = found;
+                    p.teleportTo(level, found.getX() + 0.5, 110, found.getZ() + 0.5, p.getYRot(), 30f);
+                }
+            });
+        });
+        later(300, () -> {
+            MapScreen m = new MapScreen();
+            mc.setScreen(m);
+            m.set3D(true);
+            view3D(0.6f, 0.62f, 95f);
+        });
+        shot(120, "30_village_a");
+        measure(1, "3D view, village, close", 4);
+        later(1, () -> view3D(2.5f, 0.42f, 60f));
+        shot(60, "31_village_low");
+        later(1, () -> view3D(4.2f, 0.85f, 170f));
+        shot(100, "32_village_high");
+        measure(1, "3D view, village, further", 4);
+        later(1, () -> view3D(1.2f, 0.5f, 420f));
+        shot(100, "33_village_far");
+        later(1, () -> {
+            if (mc.screen instanceof MapScreen m) CharMap.LOG.info("[Check] 3D: {} height patches, {} block patches, {} MB + {} MB, {} real mobs. Meshes {}, average {} ms, chunks read {}", m.view3d().drawnLast, m.view3d().blocksDrawnLast, m.view3d().memoryBytes() / 1048576, m.view3d().blockMemoryBytes() / 1048576, m.view3d().mobsDrawnLast(), MapClient.session.voxels.meshes, MapClient.session.voxels.meshNanos / Math.max(1, MapClient.session.voxels.meshes) / 1000000, MapClient.session.voxels.chunksRead);
+        });
+        later(1, () -> view3D(5.5f, 0.3f, 40f));
+        shot(60, "34_village_street");
+        quit(10);
+    }
+
     // On a real server: the map fills by itself from what the server sends.
     private static void scriptJoin() {
         Minecraft mc = Minecraft.getInstance();
@@ -438,7 +492,8 @@ public final class ClientChecks {
         if (JOIN.isEmpty() && (mc.getSingleplayerServer() == null || mc.getSingleplayerServer().getPlayerList().getPlayers().isEmpty())) return;
         if (!scripted) {
             scripted = true;
-            if (!JOIN.isEmpty()) scriptJoin();
+            if (VILLAGE) scriptVillage();
+            else if (!JOIN.isEmpty()) scriptJoin();
             else if (!FPS_ONLY.isEmpty()) scriptFps();
             else if (REOPEN) scriptReopen();
             else scriptFirstRun();

@@ -27,9 +27,10 @@ public final class MapScreen extends Screen {
     private float menuX, menuY;
     private int menuBlockX, menuBlockZ;
     private Waypoint menuWaypoint;
-    private static boolean threeD;
+    private static boolean threeD = MapConfig.map3d;
     private final Map3D view3d = new Map3D();
     private boolean turning, cameraSet;
+    private long lastDrag;
 
     public MapScreen() {
         super(Component.literal("World map"));
@@ -81,7 +82,7 @@ public final class MapScreen extends Screen {
         if (threeD && s != null) {
             flyKeys(mc, dt);
             g.flush();
-            view3d.render(s, w, h);
+            view3d.render(g, s, w, h, partial);
         }
         Ui.toRealPixels(g);
         RenderSystem.disableDepthTest();
@@ -138,6 +139,11 @@ public final class MapScreen extends Screen {
                 if (e.isRemoved()) continue;
                 float[] at = view3d.project(e.getX(), e.getY() + e.getBbHeight() + 1.5, e.getZ());
                 if (at == null) continue;
+                if (view3d.drawnAsModel(e)) {
+                    // The real thing is standing there: it only needs a name, if it's someone.
+                    if (e instanceof net.minecraft.world.entity.player.Player && MapConfig.playerNames) Ui.tag(g, e.getName().getString(), at[0], at[1], 0xD0180E1B, Ui.TEXT);
+                    continue;
+                }
                 int cell = !MapConfig.icons ? -1 : e instanceof net.minecraft.world.entity.player.Player ? Icons.playerCell(e.getUUID()) : Icons.mobCell(e.getType(), s.worker);
                 if (cell < 0) {
                     Ui.dot(at[0], at[1], 4, 0xC0000000);
@@ -174,18 +180,27 @@ public final class MapScreen extends Screen {
         }
     }
 
+    private void resetView() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p != null) view3d.reset(p.getX(), p.getY(), p.getZ());
+    }
+
     public void set3D(boolean on) {
         Minecraft mc = Minecraft.getInstance();
+        if (on != threeD) {
+            MapConfig.map3d = on;
+            MapConfig.save();
+        }
         if (on && !threeD && !cameraSet) {
             cameraSet = true;
             double y = mc.player == null ? 64 : mc.player.getY();
             float h = mc.getWindow().getHeight();
-            view3d.look(centreX, y, centreZ, Math.max(30, h / (2 * (float) Math.tan(Math.toRadians(30))) / shownZoom));
+            view3d.look(centreX, y, centreZ, Math.max(60, Math.min(600, h / (2 * (float) Math.tan(Math.toRadians(27))) / shownZoom)));
         }
         if (!on && threeD) {
             centreX = view3d.targetX;
             centreZ = view3d.targetZ;
-            view3d.close();
+            view3d.close(MapClient.session);
             zooming = false;
             cameraSet = false;
         }
@@ -207,7 +222,7 @@ public final class MapScreen extends Screen {
 
     @Override
     public void removed() {
-        view3d.close();
+        view3d.close(MapClient.session);
     }
 
     private void drawMobs(GuiGraphics g, MapClient.Session s, float cx, float cy) {
@@ -264,19 +279,20 @@ public final class MapScreen extends Screen {
         int bx = (int) Math.floor(centreX + (mouseX - w / 2.0) / shownZoom), bz = (int) Math.floor(centreZ + (mouseY - h / 2.0) / shownZoom);
         String where = bx + ", " + bz;
         if (s.layer != 0) where += "   ·   cave view, y " + (s.layer - 8) * 16;
-        if (threeD) where = "Drag to move  ·  Right drag to turn  ·  Wheel to zoom  ·  WASD to fly";
+        if (threeD) where = "Drag to turn  ·  Right drag or WASD to move  ·  Wheel to zoom";
         int tw = Ui.width(where);
         Ui.plate(g, pad, pad, pad + tw + 10 * k, pad + pillH, pillH / 2, Ui.PLUM);
         Ui.text(g, where, pad + 5 * k, pad + (pillH - line) / 2 + 1, Ui.TEXT);
 
         // Fill progress
         if (Filler.active()) {
-            float barW = Math.min(w * 0.42f, 210 * k), x0 = w / 2f - barW / 2, h2 = line + 9 * k;
-            Ui.plate(g, x0, pad, x0 + barW, pad + h2 + 8, 12, Ui.PLUM);
             String text = Filler.status + "  ·  " + Filler.regionsDone + " of " + Filler.regionsTotal + " regions  ·  " + Math.round(Filler.speed()) + " chunks/s";
-            Ui.textCentred(g, text, w / 2f, pad + 3 * k, Ui.TEXT);
+            float barW = Math.min(w - pad * 2, Ui.width(text) + 14 * k), x0 = w / 2f - barW / 2, h2 = line + 9 * k;
+            float top = threeD ? pad + pillH + 3 * k : pad; // under the help line in 3D
+            Ui.plate(g, x0, top, x0 + barW, top + h2 + 8, 12, Ui.PLUM);
+            Ui.textCentred(g, text, w / 2f, top + 3 * k, Ui.TEXT);
             float amount = Filler.regionsTotal == 0 ? 0 : (float) Filler.regionsDone / Filler.regionsTotal;
-            float tx0 = x0 + 5 * k, tx1 = x0 + barW - 5 * k, ty = pad + h2 + 2 - 2 * k;
+            float tx0 = x0 + 5 * k, tx1 = x0 + barW - 5 * k, ty = top + h2 + 2 - 2 * k;
             Ui.round(g, tx0, ty, tx1, ty + 2.5f * k, 1.25f * k, Ui.PLUM_DARK);
             Ui.round(g, tx0, ty, tx0 + (tx1 - tx0) * amount, ty + 2.5f * k, 1.25f * k, Ui.PINK);
         }
@@ -285,6 +301,21 @@ public final class MapScreen extends Screen {
         float y = h - pad - pillH, x = pad;
         x = button(g, x, y, pillH, k, "Centre on me", this::centreOnPlayer);
         x = button(g, x, y, pillH, k, threeD ? "Flat map" : "3D view", () -> set3D(!threeD));
+        if (threeD) {
+            x = button(g, x, y, pillH, k, "Reset view", this::resetView);
+            // Why some mobs aren't there.
+            float qr = pillH / 2, qx = x + qr;
+            boolean overHelp = Math.hypot(mouseX - qx, mouseY - (y + qr)) <= qr;
+            Ui.pill(g, null, qx - qr, y, qx + qr, y + pillH, "?", overHelp, mouseX, mouseY, () -> {});
+            if (overHelp) {
+                String[] lines = {"Mobs and players only show where the game has them loaded,", "which is near you. Teammates further away show as faces.", "Far from you the land is still there, just without anyone on it."};
+                float wide = 0;
+                for (String t : lines) wide = Math.max(wide, Ui.width(t));
+                float boxH = lines.length * (line + 2 * k) + 8 * k, bx0 = qx - qr, by0 = y - boxH - 4 * k;
+                Ui.plate(g, bx0, by0, bx0 + wide + 12 * k, by0 + boxH, 12, Ui.PLUM);
+                for (int i = 0; i < lines.length; i++) Ui.text(g, lines[i], bx0 + 6 * k, by0 + 4 * k + i * (line + 2 * k), Ui.TEXT);
+            }
+        }
         x = button(g, x, y, pillH, k, "Waypoints", () -> Minecraft.getInstance().setScreen(new WaypointListScreen(this)));
         x = button(g, x, y, pillH, k, "Settings", () -> Minecraft.getInstance().setScreen(new SettingsScreen(this)));
 
@@ -376,6 +407,14 @@ public final class MapScreen extends Screen {
     public boolean mouseClicked(double x, double y, int button) {
         measureMouse();
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && hits.press(mouseX, mouseY)) return true;
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && threeD) {
+            turning = true;
+            view3d.turning = true;
+            lastX = mouseX;
+            lastY = mouseY;
+            lastDrag = System.nanoTime();
+            return true;
+        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             dragging = true;
             zooming = false;
@@ -385,7 +424,7 @@ public final class MapScreen extends Screen {
             return true;
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && threeD) {
-            turning = true;
+            dragging = true;
             lastX = mouseX;
             lastY = mouseY;
             return true;
@@ -424,7 +463,9 @@ public final class MapScreen extends Screen {
     public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
         measureMouse();
         if (turning) {
-            view3d.turn(mouseX - lastX, mouseY - lastY);
+            long now = System.nanoTime();
+            view3d.turn(mouseX - lastX, mouseY - lastY, (now - lastDrag) / 1e9f);
+            lastDrag = now;
             lastX = mouseX;
             lastY = mouseY;
             return true;
@@ -449,6 +490,7 @@ public final class MapScreen extends Screen {
     public boolean mouseReleased(double x, double y, int button) {
         dragging = false;
         turning = false;
+        view3d.turning = false;
         hits.release();
         return true;
     }

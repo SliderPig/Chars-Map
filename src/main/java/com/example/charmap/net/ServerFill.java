@@ -51,6 +51,7 @@ public final class ServerFill {
                 p.setProperty("opsOnly", "false");
                 p.setProperty("kilobytesPerSecond", "128");
                 p.setProperty("playersAtOnce", "3");
+                p.setProperty("blocksReach", "2048");
                 try (var w = Files.newBufferedWriter(file)) {
                     p.store(w, "Char's Map: who can fill their map from this server's saves, and how fast it sends");
                 }
@@ -100,6 +101,101 @@ public final class ServerFill {
         t.setDaemon(true);
         t.setPriority(Thread.MIN_PRIORITY);
         t.start();
+    }
+
+    // ---- Real blocks for the 3D view: only ever chunks a player's camera asks about, near them, a little at a time ----
+
+    private static final Map<UUID, java.util.concurrent.LinkedBlockingQueue<Long>> VOXEL_QUEUES = new ConcurrentHashMap<>();
+
+    static void voxelAsk(ServerPlayer player, long[] chunks) {
+        Properties config = config();
+        boolean enabled = !"false".equalsIgnoreCase(config.getProperty("enabled", "true").trim());
+        boolean opsOnly = "true".equalsIgnoreCase(config.getProperty("opsOnly", "false").trim());
+        if (!enabled || (opsOnly && !player.hasPermissions(2))) return;
+        int rate = number(config, "kilobytesPerSecond", 128, 8) * 1024 * 2;
+        int reach = number(config, "blocksReach", 2048, 64) >> 4;
+        int px = player.getBlockX() >> 4, pz = player.getBlockZ() >> 4;
+        boolean[] fresh = {false};
+        java.util.concurrent.LinkedBlockingQueue<Long> queue = VOXEL_QUEUES.computeIfAbsent(player.getUUID(), id -> {
+            fresh[0] = true;
+            return new java.util.concurrent.LinkedBlockingQueue<>();
+        });
+        for (long c : chunks) {
+            if (queue.size() >= 512) break;
+            int cx = net.minecraft.world.level.ChunkPos.getX(c), cz = net.minecraft.world.level.ChunkPos.getZ(c);
+            if (Math.max(Math.abs(cx - px), Math.abs(cz - pz)) <= reach) queue.add(c);
+        }
+        if (!fresh[0]) return;
+        ServerLevel level = player.serverLevel();
+        MinecraftServer server = player.getServer();
+        Path dir = regionFolder(level, server);
+        String dimension = level.dimension().location().toString();
+        Thread t = new Thread(() -> {
+            try {
+                voxelLoop(player, server, dir, dimension, queue, rate);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Throwable e) {
+                CharMap.once("server-voxels", "Sending blocks to a player's 3D view stopped on a problem", e);
+            } finally {
+                VOXEL_QUEUES.remove(player.getUUID(), queue);
+            }
+        }, "CharMap server blocks");
+        t.setDaemon(true);
+        t.setPriority(Thread.MIN_PRIORITY);
+        t.start();
+    }
+
+    private static void voxelLoop(ServerPlayer player, MinecraftServer server, Path dir, String dimension, java.util.concurrent.LinkedBlockingQueue<Long> queue, int bytesPerSecond) throws IOException, InterruptedException {
+        McaFile mca = null;
+        long mcaRegion = Long.MIN_VALUE;
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        java.io.DataOutputStream out = new java.io.DataOutputStream(bytes);
+        int count = 0;
+        while (!player.hasDisconnected() && player.level().dimension().location().toString().equals(dimension)) {
+            Long c = queue.poll(20, java.util.concurrent.TimeUnit.SECONDS);
+            if (c == null) return; // nothing asked for a while: this thread goes away, the next ask makes a new one
+            int cx = net.minecraft.world.level.ChunkPos.getX(c), cz = net.minecraft.world.level.ChunkPos.getZ(c);
+            int rx = Coords.regionOfChunk(cx), rz = Coords.regionOfChunk(cz);
+            long region = net.minecraft.world.level.ChunkPos.asLong(rx, rz);
+            if (region != mcaRegion) {
+                mcaRegion = region;
+                Path file = dir.resolve("r." + rx + "." + rz + ".mca");
+                mca = Files.exists(file) ? McaFile.read(file) : null;
+            }
+            com.example.charmap.model.VoxelChunk v = null;
+            try {
+                byte[] data = mca == null ? null : mca.chunk(Coords.chunkIndex(cx, cz));
+                if (data != null) v = com.example.charmap.model.VoxelChunk.fromNbt(Nbt.read(data));
+            } catch (IOException | RuntimeException e) {
+                v = null; // caught mid-save
+            }
+            if (v == null) { // nothing there: an empty answer, so the client doesn't wait for it
+                v = new com.example.charmap.model.VoxelChunk();
+                v.chunkX = cx;
+                v.chunkZ = cz;
+                v.palette = new String[] {"minecraft:air"};
+                v.cells = new short[0];
+                v.biomes = new String[] {"minecraft:plains"};
+            }
+            byte[] one = v.encode();
+            out.writeInt(one.length);
+            out.write(one);
+            count++;
+            if (count >= 8 || queue.isEmpty()) {
+                out.flush();
+                java.io.ByteArrayOutputStream packet = new java.io.ByteArrayOutputStream();
+                java.io.DataOutputStream head = new java.io.DataOutputStream(packet);
+                head.writeShort(count);
+                bytes.writeTo(head);
+                head.flush();
+                byte[] blob = packet.toByteArray();
+                server.execute(() -> send(player, new Net.VoxelSend(blob, dimension)));
+                bytes.reset();
+                count = 0;
+                Thread.sleep(Math.max(10, blob.length * 1000L / bytesPerSecond));
+            }
+        }
     }
 
     private static int number(Properties config, String key, int fallback, int least) {

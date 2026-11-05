@@ -45,7 +45,7 @@ public final class SettingsScreen extends Screen {
         float k = Ui.scale(), line = Ui.lineHeight();
         float rowH = line + 7 * k, gap = 2.5f * k, columnW = 158 * k, labelW = 62 * k, pad = 8 * k;
         float panelW = columnW * 2 + pad * 3;
-        int rows = 9;
+        int rows = 12;
         float panelH = line + 8 * k + (rowH + gap) * rows + pad * 2 + rowH;
         // On a small window, shrink the gap rather than run off the screen.
         float x0 = Math.max(4, w / 2f - panelW / 2), y0 = Math.max(4, h / 2f - panelH / 2);
@@ -80,6 +80,8 @@ public final class SettingsScreen extends Screen {
             }
         });
         y = toggle(g, "Text", x, y, labelW, cw, rowH, gap, MapConfig.infoText ? "Biome + coords" : "Off", MapConfig.infoText, () -> MapConfig.infoText = !MapConfig.infoText);
+        y = toggle(g, "Names", x, y, labelW, cw, rowH, gap, MapConfig.playerNames ? "On" : "Off", MapConfig.playerNames, () -> MapConfig.playerNames = !MapConfig.playerNames);
+        y = toggle(g, "Keep blocks", x, y, labelW, cw, rowH, gap, MapConfig.keepBuildings ? "For 3D on servers" : "Off", MapConfig.keepBuildings, () -> MapConfig.keepBuildings = !MapConfig.keepBuildings);
 
         // Right column: the world map and how it fills
         x = x0 + pad * 2 + columnW;
@@ -97,6 +99,9 @@ public final class SettingsScreen extends Screen {
         y = toggle(g, "Compass", x, y, labelW, cw, rowH, gap, MapConfig.compass ? "On" : "Off", MapConfig.compass, () -> MapConfig.compass = !MapConfig.compass);
         y = toggle(g, "Memory", x, y, labelW, cw, rowH, gap, MapConfig.textureMemoryMb + " MB, next join", false, () -> MapConfig.textureMemoryMb = MapConfig.textureMemoryMb >= 128 ? 32 : MapConfig.textureMemoryMb * 2);
         y = toggle(g, "Debug line", x, y, labelW, cw, rowH, gap, MapConfig.debug ? "On" : "Off", MapConfig.debug, () -> MapConfig.debug = !MapConfig.debug);
+        y = slider(g, "3D detail", x, y, labelW, cw, rowH, gap, MapConfig.detailRadius / 512f, a -> MapConfig.detailRadius = (int) Math.round(a * 8) * 64, MapConfig.detailRadius + "");
+        y = toggle(g, "3D memory", x, y, labelW, cw, rowH, gap, MapConfig.voxelMemoryMb + " MB", false, () -> MapConfig.voxelMemoryMb = MapConfig.voxelMemoryMb >= 384 ? 96 : MapConfig.voxelMemoryMb * 2);
+        y = toggle(g, "3D mobs", x, y, labelW, cw, rowH, gap, MapConfig.mobs3d == 0 ? "Faces" : MapConfig.mobs3d == 1 ? "Real size" : "Real, bigger", MapConfig.mobs3d != 0, () -> MapConfig.mobs3d = (MapConfig.mobs3d + 1) % 3);
 
         float bottom = y0 + panelH - pad - rowH;
         Ui.pill(g, hits, x0 + pad, bottom, x0 + pad + columnW, bottom + rowH, MapConfig.enabled ? "Whole mod: on" : "Whole mod: resting", MapConfig.enabled, mouseX, mouseY, () -> MapConfig.enabled = !MapConfig.enabled);

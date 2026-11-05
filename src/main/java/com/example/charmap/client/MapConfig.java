@@ -32,6 +32,11 @@ public final class MapConfig {
     public static int caveMode = 1;         // 0 never, 1 automatic underground
     public static int netherMode = 0;       // 0 below the roof, 1 around your height
     public static boolean beacons = true;
+    public static boolean map3d = false;    // the world map opens in 3D
+    public static int detailRadius = 256;   // blocks round the middle of the 3D view with real block shapes, 0 = none
+    public static int voxelMemoryMb = 192;  // graphics memory for those
+    public static boolean keepBuildings = true; // on a server: keep the blocks you've seen, for the 3D view
+    public static int mobs3d = 2;           // in the 3D view: 0 faces, 1 real mobs, 2 real mobs a bit bigger when zoomed out
     public static boolean debug = false;
 
     public static final float[] ZOOMS = {0.5f, 1f, 2f, 3f, 4f, 6f, 8f};
@@ -73,6 +78,11 @@ public final class MapConfig {
         caveMode = number(p, "caveMode", caveMode, 0, 1);
         netherMode = number(p, "netherMode", netherMode, 0, 1);
         beacons = bool(p, "beacons", beacons);
+        map3d = bool(p, "map3d", map3d);
+        detailRadius = number(p, "detailRadius", detailRadius, 0, 1024);
+        voxelMemoryMb = number(p, "voxelMemoryMb", voxelMemoryMb, 32, 2048);
+        keepBuildings = bool(p, "keepBuildings", keepBuildings);
+        mobs3d = number(p, "mobs3d", mobs3d, 0, 2);
         debug = bool(p, "debug", debug);
     }
 
@@ -97,6 +107,11 @@ public final class MapConfig {
         p.setProperty("caveMode", "" + caveMode);
         p.setProperty("netherMode", "" + netherMode);
         p.setProperty("beacons", "" + beacons);
+        p.setProperty("map3d", "" + map3d);
+        p.setProperty("detailRadius", "" + detailRadius);
+        p.setProperty("voxelMemoryMb", "" + voxelMemoryMb);
+        p.setProperty("keepBuildings", "" + keepBuildings);
+        p.setProperty("mobs3d", "" + mobs3d);
         p.setProperty("debug", "" + debug);
         try (Writer w = Files.newBufferedWriter(file())) {
             p.store(w, "Char's Map");

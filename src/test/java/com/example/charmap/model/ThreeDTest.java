@@ -16,7 +16,7 @@ class ThreeDTest {
 
     private static List<Quad> mesh(int n, int cell, int[] colours, short[] heights) {
         List<Quad> out = new ArrayList<>();
-        HeightMesh.build(n, cell, colours, heights, (x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, c) -> out.add(new Quad(new float[] {x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3}, c)));
+        HeightMesh.build(n, cell, 1, colours, heights, (x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, c0, c1, c2, c3) -> out.add(new Quad(new float[] {x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3}, c0)));
         return out;
     }
 
@@ -138,6 +138,33 @@ class ThreeDTest {
         s.reset();
         assertEquals(0, s.frames());
         assertEquals(0, s.worstMillis());
+    }
+
+    @Test
+    void aTallNeighbourTowardsTheSunCastsAShadow() {
+        int size = 13;
+        short[] h = new short[size * size];
+        java.util.Arrays.fill(h, (short) 64);
+        assertFalse(HeightMesh.inShadow(h, size, 6, 6, (short) 64, 1, 6));
+        h[5 * size + 5] = 80; // one step towards the sun, 16 higher
+        assertTrue(HeightMesh.inShadow(h, size, 6, 6, (short) 64, 1, 6));
+        // The other side of it isn't in its shadow
+        assertFalse(HeightMesh.inShadow(h, size, 4, 4, (short) 64, 1, 3));
+    }
+
+    @Test
+    void creasesDarkenTheCornerNextToATallerColumn() {
+        int n = 3, size = n + 2;
+        short[] h = heights(n, 64);
+        h[(1 + 1) * size + 2 + 1] = 66; // column x 2, z 1
+        List<int[]> corners = new ArrayList<>();
+        HeightMesh.build(n, 1, 1, grid(n, 0xFF808080), h, (x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, c0, c1, c2, c3) -> {
+            if (y0 == y1 && x0 == 1 && z0 == 1 && y0 == 65f) corners.add(new int[] {c0, c1, c2, c3});
+        });
+        assertEquals(1, corners.size());
+        int[] c = corners.get(0);
+        assertEquals(0xFF808080, c[0]); // far corner stays bright
+        assertTrue((c[2] & 255) < 0x80 && (c[3] & 255) < 0x80); // the two touching it go dark
     }
 
     @Test

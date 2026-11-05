@@ -39,6 +39,7 @@ def main():
     reopen = 'reopen' in sys.argv
     fps = next((a[4:] for a in sys.argv if a.startswith('fps=')), '')
     join = next((a[5:] for a in sys.argv if a.startswith('join=')), '')
+    village = 'village' in sys.argv
     d = json.load(open(os.path.join(META, 'versions', VERSION, VERSION + '.json'), encoding='utf-8'))
     cp, seen = [], set()
     for lib in d['libraries']:
@@ -96,7 +97,7 @@ def main():
                 out.extend(fill(x) for x in ([v] if isinstance(v, str) else v))
         return out
 
-    flags = ['-Dcharmap.smokeclient=true'] + (['-Dcharmap.reopen=true'] if reopen else []) + (['-Dcharmap.fpsonly=' + fps] if fps else []) + (['-Dcharmap.join=' + join] if join else [])
+    flags = ['-Dcharmap.smokeclient=true'] + (['-Dcharmap.reopen=true'] if reopen else []) + (['-Dcharmap.fpsonly=' + fps] if fps else []) + (['-Dcharmap.join=' + join] if join else []) + (['-Dcharmap.village=true'] if village else [])
     cmd = [JAVA, '-Xmx2500M'] + flags + flat(d['arguments']['jvm']) + [d['mainClass']] + flat(d['arguments']['game']) + ['--width', '1600', '--height', '900']
     with open(os.path.join(RUN, 'launch.log'), 'w', encoding='utf-8', errors='replace') as log:
         try:

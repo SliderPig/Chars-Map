@@ -62,13 +62,15 @@ public final class MapClient {
         public final Path worldFolder;
         public final MapWorker worker;
         public final Textures textures;
+        public final VoxelWorker voxels;
         final LongOpenHashSet pending = new LongOpenHashSet();
         public final boolean ceiling;
         public final int ceilingY;
         public int layer;
         int wantLayer, wantLayerFor;
 
-        Session(String worldId, String dimension, Path worldFolder, MapWorker worker, boolean ceiling, int ceilingY) {
+        Session(String worldId, String dimension, Path worldFolder, MapWorker worker, VoxelWorker voxels, boolean ceiling, int ceilingY) {
+            this.voxels = voxels;
             this.worldId = worldId;
             this.dimension = dimension;
             this.worldFolder = worldFolder;
@@ -106,6 +108,7 @@ public final class MapClient {
         mod.addListener(MapClient::onKeys);
         mod.addListener(MapClient::onOverlays);
         mod.addListener(MapClient::onReloaders);
+        mod.addListener(MapClient::onShaders);
         IEventBus forge = MinecraftForge.EVENT_BUS;
         forge.addListener(MapClient::onChunk);
         forge.addListener(MapClient::onTick);
@@ -129,6 +132,15 @@ public final class MapClient {
 
     private static void onOverlays(RegisterGuiOverlaysEvent e) {
         e.registerAboveAll("minimap", (gui, g, partial, w, h) -> Minimap.render(g, partial));
+    }
+
+    private static void onShaders(net.minecraftforge.client.event.RegisterShadersEvent e) {
+        try {
+            e.registerShader(new net.minecraft.client.renderer.ShaderInstance(e.getResourceProvider(), new net.minecraft.resources.ResourceLocation(CharMap.MODID, "map3d_color"), com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR), s -> Map3D.colourShader = s);
+            e.registerShader(new net.minecraft.client.renderer.ShaderInstance(e.getResourceProvider(), new net.minecraft.resources.ResourceLocation(CharMap.MODID, "map3d_texture"), com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR_TEX), s -> Map3D.textureShader = s);
+        } catch (java.io.IOException | RuntimeException x) {
+            CharMap.once("shaders", "The 3D view's shaders wouldn't load, it'll draw without haze", x);
+        }
     }
 
     private static void onReloaders(RegisterClientReloadListenersEvent e) {
@@ -189,7 +201,12 @@ public final class MapClient {
         MapWorker worker = new MapWorker(dimFolder, level.registryAccess().registryOrThrow(Registries.BIOME));
         boolean ceiling = level.dimensionType().hasCeiling();
         int ceilingY = Math.min(level.dimensionType().logicalHeight() + level.getMinBuildHeight(), level.getMaxBuildHeight()) - 1;
-        session = new Session(world, dim, folder, worker, ceiling, ceilingY);
+        Path regionDir = null;
+        if (mc.getSingleplayerServer() != null) {
+            regionDir = net.minecraft.world.level.dimension.DimensionType.getStorageFolder(level.dimension(), mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT)).resolve("region");
+        }
+        VoxelWorker voxels = new VoxelWorker(dimFolder.resolve("blocks"), regionDir, mc.getSingleplayerServer() != null, MapConfig.keepBuildings, level.registryAccess().registryOrThrow(Registries.BIOME), level.getMinBuildHeight(), level.getHeight());
+        session = new Session(world, dim, folder, worker, voxels, ceiling, ceilingY);
         if (!world.equals(waypointsWorld)) loadWaypoints(world, folder);
         diedShown = false;
         nearIndex = 0;
@@ -218,6 +235,7 @@ public final class MapClient {
         } catch (Throwable t) {
             CharMap.once("gl-close", "Couldn't free the map's textures", t);
         }
+        s.voxels.close();
         if (quitting) s.worker.waitFinished(8000);
         else s.worker.finish();
     }
@@ -422,7 +440,12 @@ public final class MapClient {
 
     private static void copyChunk(Session s, LevelChunk chunk, int distance) {
         if (s.ceiling) s.worker.add(ChunkSnapshot.slice(chunk, 0, s.ceilingY, 256, false));
-        else s.worker.add(ChunkSnapshot.surface(chunk));
+        else {
+            ChunkSnapshot surface = ChunkSnapshot.surface(chunk);
+            s.worker.add(surface);
+            // On a server there may be no save file to read later: quietly keep the blocks you've seen, on the 3D view's own thread, with the copy that was made anyway.
+            if (MapConfig.keepBuildings && !isHost() && distance <= 16) s.voxels.capture(surface);
+        }
         if (s.layer != 0 && distance <= 12) s.worker.add(ChunkSnapshot.slice(chunk, s.layer, Coords.layerTopY(s.layer), 40, true));
     }
 

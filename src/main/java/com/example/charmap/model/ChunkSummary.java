@@ -47,7 +47,7 @@ public final class ChunkSummary {
         return i < 0 ? block : block.substring(0, i);
     }
 
-    private static final class Section {
+    static final class Section {
         int y;
         String[] palette;
         long[] data;
@@ -87,7 +87,7 @@ public final class ChunkSummary {
     }
 
     @SuppressWarnings("unchecked")
-    private static Section section(Map<String, Object> tag) {
+    static Section section(Map<String, Object> tag) {
         Object y = tag.get("Y");
         Object states = tag.get("block_states");
         if (!(y instanceof Number) || !(states instanceof Map)) return null;
@@ -224,7 +224,7 @@ public final class ChunkSummary {
         return out;
     }
 
-    private static int biomeAt(Section[] byY, int bottom, int y, int x, int z, List<String> names, Map<String, Integer> index) {
+    static int biomeAt(Section[] byY, int bottom, int y, int x, int z, List<String> names, Map<String, Integer> index) {
         int i = (y >> 4) - bottom;
         Section s = i >= 0 && i < byY.length ? byY[i] : null;
         if (s == null || s.biomePalette == null) return indexOf(names, index, "minecraft:plains");
