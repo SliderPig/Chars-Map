@@ -169,12 +169,12 @@ public final class Ui {
         polygon(g, cx, cy, Shapes.rounded(radius, radius, corner), Shapes.rounded(radius + 1.1f, radius + 1.1f, corner), colour);
     }
 
-    private static final float[] HEX = {1f, 0f, 0.5f, 0.866f, -0.5f, 0.866f, -1f, 0f, -0.5f, -0.866f, 0.5f, -0.866f};
+    private static final float[] HEX = {1f, 0f, 0.707f, 0.707f, 0f, 1f, -0.707f, 0.707f, -1f, 0f, -0.707f, -0.707f, 0f, -1f, 0.707f, -0.707f};
 
     // A small dot, cheap enough to draw lots of. Only between begin and end.
     public static void dot(float x, float y, float r, int c) {
-        for (int i = 0; i < 6; i++) {
-            int j = (i + 1) % 6;
+        for (int i = 0; i < 8; i++) {
+            int j = (i + 1) % 8;
             vertex(x, y, c);
             vertex(x + HEX[i * 2] * r, y + HEX[i * 2 + 1] * r, c);
             vertex(x + HEX[j * 2] * r, y + HEX[j * 2 + 1] * r, c);
@@ -226,10 +226,12 @@ public final class Ui {
         text(g, s, cx - width(s) / 2f, y, colour);
     }
 
+    public static int tagLimit = -1;
+
     // A piece of text on its own small rounded tag, kept on the screen.
     public static void tag(GuiGraphics g, String s, float cx, float y, int back, int colour) {
         int w = width(s) + Math.round(6 * scale());
-        int screen = Minecraft.getInstance().getWindow().getWidth();
+        int screen = tagLimit > 0 ? tagLimit : Minecraft.getInstance().getWindow().getWidth();
         cx = Math.max(w / 2f + 2, Math.min(screen - w / 2f - 2, cx));
         round(g, cx - w / 2f, y, cx + w / 2f, y + lineHeight() + 2, lineHeight() * 0.55f, back);
         textCentred(g, s, cx, y + Math.round(scale() * 0.5f), colour);

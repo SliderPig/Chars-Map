@@ -2,6 +2,7 @@ plugins {
     id 'eclipse'
     id 'idea'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
 }
 
 version = '1.0'
@@ -51,8 +52,14 @@ if (project.hasProperty('smoke')) {
     }
 }
 
+mixin {
+    add sourceSets.main, 'charmap.refmap.json'
+    config 'charmap.mixins.json'
+}
+
 dependencies {
     minecraft 'net.minecraftforge:forge:1.20.1-47.3.0'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
@@ -67,7 +74,8 @@ tasks.named('jar', Jar) {
             'Specification-Title'   : 'charmap',
             'Specification-Version' : '1',
             'Implementation-Title'  : project.name,
-            'Implementation-Version': project.jar.archiveVersion
+            'Implementation-Version': project.jar.archiveVersion,
+            'MixinConfigs'          : 'charmap.mixins.json'
         ])
     }
 }

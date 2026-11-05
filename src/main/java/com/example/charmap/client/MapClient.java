@@ -88,6 +88,7 @@ public final class MapClient {
     private static final int[] NEAR = FillOrder.spiral(2);
     private static int nearIndex, farIndex;
     private static boolean diedShown;
+    private static int rescanTick;
 
     // Measurements for the debug line and the report.
     public static long joinNanos;
@@ -326,6 +327,7 @@ public final class MapClient {
     // Blocks change without any notice a client mod can hear, so a slow sweep looks again: near you every second or so, further out every minute or so.
     // A chunk that turns out the same costs almost nothing after the copy.
     private static void rescan(Minecraft mc, Session s, LocalPlayer player) {
+        if (Minimap.movingFast() || ++rescanTick % 2 != 0) return; // everything's new while flying anyway
         ChunkPos at = player.chunkPosition();
         int count = NEAR.length / 2;
         nearIndex = (nearIndex + 1) % count;
@@ -336,6 +338,7 @@ public final class MapClient {
             spiralRadius = r;
             farIndex = 0;
         }
+        if (rescanTick % 4 != 0) return;
         farIndex = (farIndex + 1) % (spiral.length / 2);
         s.pending.add(ChunkPos.asLong(at.x + spiral[farIndex * 2], at.z + spiral[farIndex * 2 + 1]));
     }

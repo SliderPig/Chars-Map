@@ -157,7 +157,7 @@ public final class Filler {
             }
         }, "CharMap fill");
         thread.setDaemon(true);
-        thread.setPriority(Thread.MIN_PRIORITY);
+        thread.setPriority(Thread.NORM_PRIORITY - 2);
         thread.start();
         return true;
     }
@@ -218,10 +218,12 @@ public final class Filler {
                 while (worker.fillsWaiting() > 48 && !stopAsked) Thread.sleep(1);
                 worker.addFill(s);
                 chunksDone++;
-                // The game comes first: when frames drop, ease right off.
-                int fps = Minecraft.getInstance().getFps();
-                if (fps < 20) Thread.sleep(12);
-                else if (fps < 40) Thread.sleep(3);
+                // The game comes first: when frames drop, ease off. Windows can't sleep for less than a few ms, so it's a longer rest every so often.
+                if (chunksDone % 8 == 0) {
+                    int fps = Minecraft.getInstance().getFps();
+                    if (fps < 20) Thread.sleep(40);
+                    else if (fps < 40) Thread.sleep(8);
+                }
                 waitNanos += System.nanoTime() - t1;
             } catch (IOException | RuntimeException e) {
                 CharMap.once("fill-chunk", "Skipped a chunk that couldn't be read, it may be mid-save", e);

@@ -207,10 +207,19 @@ public final class ClientChecks {
         teleport(1, "minecraft:overworld", -600, 110, 900);
         later(120, () -> CharMap.LOG.info("[Check] uploads with: {}", Minimap.debugLine()));
         shot(5, "03_minimap_after_hops");
-        fly("flying at 60 blocks a second, map on", 3f, 15);
+        // The first pass generates the ground, so it isn't a fair measure of the map; the turns after it are.
+        fly("first pass, new ground being generated, map on", 3f, 12);
+        fly("back again, map on", -3f, 12);
         later(1, () -> MapConfig.enabled = false);
-        fly("flying at 60 blocks a second, map resting", -3f, 15);
+        fly("out, map resting", 3f, 12);
+        fly("back, map resting", -3f, 12);
         later(1, () -> MapConfig.enabled = true);
+        fly("out, map on", 3f, 12);
+        fly("back, map on", -3f, 12);
+        later(100, () -> {
+            MapClient.MINIMAP_ONLY.reset();
+        });
+        later(120, () -> CharMap.LOG.info("[Check] hovering, nothing moving, corner map per frame: {}. {}", MapClient.MINIMAP_ONLY.summary(), Minimap.debugLine()));
 
         later(10, () -> {
             MapConfig.circle = true;

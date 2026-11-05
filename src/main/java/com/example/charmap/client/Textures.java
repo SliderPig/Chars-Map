@@ -212,7 +212,7 @@ public final class Textures {
         }
     }
 
-    private static final int STRIP = 64;
+    private static final int STRIP = 32;
     // Through a pixel buffer the driver takes a copy and gets on with it later, rather than making the game wait until the graphics chip has finished with the texture.
     public static boolean usePixelBuffer = true;
     private IntBuffer staging;

@@ -4,12 +4,16 @@ import com.example.charmap.CharMap;
 import com.example.charmap.model.Coords;
 import com.example.charmap.model.Shapes;
 import com.example.charmap.model.Waypoint;
+import com.mojang.blaze3d.pipeline.TextureTarget;
+import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -25,6 +29,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
 import org.joml.Matrix4f;
+import org.lwjgl.opengl.GL11;
 
 // The corner map. It draws what's there and never waits: no tile yet just means the plain background for a moment.
 // Each frame it costs one slide of a ready-made picture, one batch of shapes and one batch of text.
@@ -37,6 +42,7 @@ public final class Minimap {
     static final List<Entity> NEAR = new ArrayList<>();
     private static int age;
     private static float speed;
+    private static boolean mobsInView;
     private static double lastX, lastZ;
     public static double drawMillis;
     private static String coords = "";
@@ -67,6 +73,8 @@ public final class Minimap {
             if (NEAR.size() > 1) NEAR.sort(Comparator.comparingDouble(e -> e.distanceToSqr(p)));
             if (NEAR.size() > 96) NEAR.subList(96, NEAR.size()).clear();
         }
+        double range = MapConfig.size * 0.75 / MapConfig.pixelsPerBlock();
+        mobsInView = !NEAR.isEmpty() && NEAR.get(0).distanceToSqr(p) < range * range;
     }
 
     static boolean movingFast() {
@@ -88,6 +96,10 @@ public final class Minimap {
 
     static void close() {
         CACHE.close();
+        if (hud != null) {
+            hud.destroyBuffers();
+            hud = null;
+        }
     }
 
     public static void render(GuiGraphics g, float partial) {
@@ -117,6 +129,29 @@ public final class Minimap {
         ringFeather = Shapes.rounded(half + 3.2f, radius + 3.2f, corner);
     }
 
+    private static TextureTarget hud;
+    private static int hudW, hudH;
+    private static double hudX, hudZ;
+    private static float hudRotation, lastYaw;
+    private static long hudAt, hudSettings, seenChanges, lastTurn;
+    private static boolean arrowInHud;
+    public static long hudRemakes;
+
+    private static long settingsHash(float ppb) {
+        long h = MapConfig.size;
+        h = h * 31 + MapConfig.corner;
+        h = h * 31 + (MapConfig.circle ? 1 : 0);
+        h = h * 31 + (MapConfig.rotate ? 1 : 0);
+        h = h * 31 + (MapConfig.dots ? 1 : 0);
+        h = h * 31 + (MapConfig.icons ? 1 : 0);
+        h = h * 31 + (MapConfig.infoText ? 1 : 0);
+        h = h * 31 + (MapConfig.compass ? 1 : 0);
+        h = h * 31 + Math.round(MapConfig.opacity * 100);
+        h = h * 31 + Math.round(ppb * 4);
+        h = h * 31 + Math.round(Ui.scale());
+        return h;
+    }
+
     private static void draw(GuiGraphics g, Minecraft mc, MapClient.Session s, float partial) {
         LocalPlayer p = mc.player;
         var window = mc.getWindow();
@@ -137,46 +172,125 @@ public final class Minimap {
         float rotation = MapConfig.rotate ? -facing : 0;
         float ppb = MapConfig.pixelsPerBlock();
 
-        // The ready-made picture: big enough to turn in and to slide a good way before it needs remaking.
-        int side = Math.round(size * 2) + 2;
-        float reach = MapConfig.rotate && !MapConfig.circle ? half * 1.42f : half;
-        boolean smooth = MapConfig.rotate || ppb < 1;
-        CACHE.update(s.textures, s.layer, px, pz, ppb, side, side / 2f - reach - 2, smooth);
+        // The picture holds the map, ring, faces and text, with room round the sides for names that hang over.
+        int padX = 130, padY = 12;
+        int w = Math.round(size) + padX * 2, h = Math.round(size) + padY * 2 + Math.round(textRows) + 8;
+        float localX = padX + half, localY = padY + half;
 
+        long now = System.nanoTime();
+        if (Math.abs(yaw - lastYaw) > 0.2f) lastTurn = now;
+        lastYaw = yaw;
+        boolean arrowWanted = MapConfig.rotate || now - lastTurn > 200_000_000L; // while you look round, only the arrow is redrawn
+        long settings = settingsHash(ppb);
+        long since = now - hudAt;
+        boolean moved = Math.abs(px - hudX) * ppb >= 0.5 || Math.abs(pz - hudZ) * ppb >= 0.5 || (MapConfig.rotate && Math.abs(rotation - hudRotation) >= 0.007f);
+        boolean remake = hud == null || hudW != w || hudH != h || settings != hudSettings || arrowWanted != arrowInHud
+                || (moved && since > 22_000_000L)
+                || (mobsInView && since > 100_000_000L)
+                || (s.textures.changes != seenChanges && since > 180_000_000L)
+                || since > 1_000_000_000L;
+        if (remake) {
+            arrowInHud = arrowWanted;
+            hudSettings = settings;
+            hudX = px;
+            hudZ = pz;
+            hudRotation = rotation;
+            hudAt = now;
+            seenChanges = s.textures.changes;
+            hudRemakes++;
+            compose(g, mc, s, p, size, half, radius, localX, localY, w, h, px, pz, ppb, rotation, facing, arrowWanted);
+        }
+
+        // Every frame: one quad.
         Ui.toRealPixels(g);
         RenderSystem.disableDepthTest();
         RenderSystem.setShaderColor(1, 1, 1, 1);
-
-        drawPicture(g, cx, cy, px, pz, ppb, rotation);
-        if (!MapClient.firstPixelsLogged) checkFirstPixels(s, px, pz, ppb);
-
-        // Soft shadow round it, then the ring: a dark edge and a thin pink line, feathered so a circle stays round at any size.
-        Ui.begin(g);
-        Ui.band(g, cx, cy + 2, shape, shadow, 0x66000000, 0);
-        Ui.band(g, cx, cy, innerEdge, shape, 0x00000000, 0x55000000);
-        Ui.band(g, cx, cy, shape, ringOuter, Ui.PINK, Ui.PINK);
-        Ui.band(g, cx, cy, ringOuter, ringFeather, Ui.PINK, Ui.PINK & 0xFFFFFF);
-
-        float cos = (float) Math.cos(rotation), sin = (float) Math.sin(rotation);
-        float inner = half - 7, innerRadius = Math.max(1, radius - 7);
-
-        if (MapConfig.dots) drawMobs(g, s, cx, cy, px, pz, ppb, cos, sin, half - 4, Math.max(1, radius - 4));
-        drawWaypoints(g, s, cx, cy, px, pz, ppb, cos, sin, inner, innerRadius);
-        drawMates(g, s, cx, cy, px, pz, ppb, cos, sin, inner - 4, Math.max(1, innerRadius - 4));
-
-        // You, in the middle
-        float arrowSize = Math.max(7, size * 0.037f);
-        Ui.arrow(g, cx, cy, arrowSize, MapConfig.rotate ? 0 : facing, Ui.PINK, 0xFF1A0F1C);
-
-        if (MapConfig.compass) drawCompass(g, cx, cy, half, radius, cos, sin);
-        if (MapConfig.infoText) drawText(g, p, cx, cy + half + 8);
+        float x0 = Math.round(cx - localX), y0 = Math.round(cy - localY);
+        blit(g, x0, y0, w, h);
+        if (!arrowWanted) Ui.arrow(g, x0 + localX, y0 + localY, Math.max(7, size * 0.037f), facing, Ui.PINK, 0xFF1A0F1C);
         if (MapConfig.debug) drawDebug(g, s, right ? screenW - 8 : 8, bottom ? cy - half - Ui.lineHeight() - 10 : cy + half + 8 + textRows + 2, right);
-        Ui.after(() -> Icons.flush(g));
-
-        Ui.end(g);
+        if (!MapClient.firstPixelsLogged) checkFirstPixels(s, px, pz, ppb);
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
         g.pose().popPose();
+    }
+
+    private static void blit(GuiGraphics g, float x0, float y0, int w, int h) {
+        g.flush();
+        Matrix4f m = g.pose().last().pose();
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        RenderSystem.setShaderTexture(0, hud.getColorTextureId());
+        RenderSystem.enableBlend();
+        RenderSystem.disableCull();
+        // What's in the picture has already been blended once.
+        RenderSystem.blendFuncSeparate(GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
+        BufferBuilder buf = Tesselator.getInstance().getBuilder();
+        buf.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+        buf.vertex(m, x0, y0, 0).uv(0, 1).endVertex();
+        buf.vertex(m, x0, y0 + h, 0).uv(0, 0).endVertex();
+        buf.vertex(m, x0 + w, y0 + h, 0).uv(1, 0).endVertex();
+        buf.vertex(m, x0 + w, y0, 0).uv(1, 1).endVertex();
+        BufferUploader.drawWithShader(buf.end());
+        RenderSystem.defaultBlendFunc();
+    }
+
+    // Draws everything into the picture. Only happens when something on it has changed.
+    private static void compose(GuiGraphics g, Minecraft mc, MapClient.Session s, LocalPlayer p, float size, float half, float radius, float cx, float cy, int w, int h, double px, double pz, float ppb, float rotation, float facing, boolean withArrow) {
+        g.flush();
+        int side = Math.round(size * 2) + 2;
+        float reach = MapConfig.rotate && !MapConfig.circle ? half * 1.42f : half;
+        CACHE.update(s.textures, s.layer, px, pz, ppb, side, side / 2f - reach - 2, MapConfig.rotate || ppb < 1);
+
+        if (hud == null || hudW != w || hudH != h) {
+            if (hud != null) hud.destroyBuffers();
+            hud = new TextureTarget(w, h, false, Minecraft.ON_OSX);
+            hud.setClearColor(0, 0, 0, 0);
+            hud.setFilterMode(GL11.GL_NEAREST);
+            hudW = w;
+            hudH = h;
+        }
+        hud.clear(Minecraft.ON_OSX);
+        hud.bindWrite(true);
+        RenderSystem.backupProjectionMatrix();
+        RenderSystem.setProjectionMatrix(new Matrix4f().setOrtho(0, w, h, 0, -1000, 1000), VertexSorting.ORTHOGRAPHIC_Z);
+        PoseStack view = RenderSystem.getModelViewStack();
+        view.pushPose();
+        view.setIdentity();
+        RenderSystem.applyModelViewMatrix();
+        g.pose().pushPose();
+        g.pose().last().pose().identity();
+        Ui.tagLimit = w;
+        RenderSystem.disableDepthTest();
+        RenderSystem.setShaderColor(1, 1, 1, 1);
+        try {
+            drawPicture(g, cx, cy, px, pz, ppb, rotation);
+            // Soft shadow round it, then the ring: a dark edge and a thin pink line, feathered so a circle stays round at any size.
+            Ui.begin(g);
+            Ui.band(g, cx, cy + 2, shape, shadow, 0x66000000, 0);
+            Ui.band(g, cx, cy, innerEdge, shape, 0x00000000, 0x55000000);
+            Ui.band(g, cx, cy, shape, ringOuter, Ui.PINK, Ui.PINK);
+            Ui.band(g, cx, cy, ringOuter, ringFeather, Ui.PINK, Ui.PINK & 0xFFFFFF);
+
+            float cos = (float) Math.cos(rotation), sin = (float) Math.sin(rotation);
+            float inner = half - 7, innerRadius = Math.max(1, radius - 7);
+
+            if (MapConfig.dots) drawMobs(g, s, cx, cy, px, pz, ppb, cos, sin, half - 4, Math.max(1, radius - 4));
+            drawWaypoints(g, s, cx, cy, px, pz, ppb, cos, sin, inner, innerRadius);
+            drawMates(g, s, cx, cy, px, pz, ppb, cos, sin, inner - 4, Math.max(1, innerRadius - 4));
+
+            if (withArrow) Ui.arrow(g, cx, cy, Math.max(7, size * 0.037f), MapConfig.rotate ? 0 : facing, Ui.PINK, 0xFF1A0F1C);
+            if (MapConfig.compass) drawCompass(g, cx, cy, half, radius, cos, sin);
+            if (MapConfig.infoText) drawText(g, p, cx, cy + half + 8);
+            Ui.after(() -> Icons.flush(g));
+            Ui.end(g);
+        } finally {
+            Ui.tagLimit = -1;
+            g.pose().popPose();
+            view.popPose();
+            RenderSystem.applyModelViewMatrix();
+            RenderSystem.restoreProjectionMatrix();
+            mc.getMainRenderTarget().bindWrite(true);
+        }
     }
 
     // One draw: the map shape, showing the right part of the picture.
@@ -316,9 +430,9 @@ public final class Minimap {
         if (s == null) return "no map open";
         MapWorker w = s.worker;
         Textures t = s.textures;
-        String line = String.format("%.3f ms/frame (draw %.3f), pending %d, colour %d, fill %d, load %d, up %d, gl %d/%d, tiles %d, coloured %d, unchanged %d, from disk %d, strip avg %d us max %d us, chunk copy avg %d us max %d us, worker: colour %d us, tile load %d us, picture remade %d times, faces pictured %d loaded %d",
+        String line = String.format("%.3f ms/frame (draw %.3f), pending %d, colour %d, fill %d, load %d, up %d, gl %d/%d, tiles %d, coloured %d, unchanged %d, from disk %d, strip avg %d us max %d us, chunk copy avg %d us max %d us, worker: colour %d us, tile load %d us, picture remade %d times, corner map redrawn %d times, faces pictured %d loaded %d",
                 MapClient.frameMillis, drawMillis, s.pending.size(), w.snapshotsWaiting(), w.fillsWaiting(), w.requestsWaiting(), w.uploadsWaiting(), t.inUse(), t.budget(), w.tilesHeld, w.chunksColoured, w.chunksUnchanged, w.tilesLoadedFromDisk,
-                t.stripNanos / Math.max(1, t.strips) / 1000, t.slowestStrip / 1000, MapClient.copyNanos / Math.max(1, MapClient.snapshotsTaken) / 1000, MapClient.slowestCopy / 1000, w.colourNanos / Math.max(1, w.chunksColoured + w.chunksUnchanged) / 1000, w.loadNanos / Math.max(1, w.tilesLoaded) / 1000, CACHE.composes, Icons.pictured, Icons.loaded);
+                t.stripNanos / Math.max(1, t.strips) / 1000, t.slowestStrip / 1000, MapClient.copyNanos / Math.max(1, MapClient.snapshotsTaken) / 1000, MapClient.slowestCopy / 1000, w.colourNanos / Math.max(1, w.chunksColoured + w.chunksUnchanged) / 1000, w.loadNanos / Math.max(1, w.tilesLoaded) / 1000, CACHE.composes, hudRemakes, Icons.pictured, Icons.loaded);
         t.slowestStrip = 0;
         t.stripNanos = 0;
         t.strips = 0;

@@ -146,7 +146,7 @@ public final class MapWorker implements Runnable {
         this.maxMemory = MapConfig.textureMemoryMb * 1_048_576L;
         this.thread = new Thread(this, "CharMap worker");
         thread.setDaemon(true);
-        thread.setPriority(Thread.MIN_PRIORITY + 1);
+        thread.setPriority(Thread.NORM_PRIORITY - 1);
         thread.start();
     }
 
@@ -653,6 +653,23 @@ public final class MapWorker implements Runnable {
         }
     }
 
+    // A virus scanner or the indexer can hold a brand new file for a moment, which Windows answers with "access denied": try a few times before calling it trouble.
+    private static void moveIntoPlace(Path temp, Path path) throws IOException {
+        for (int attempt = 0; ; attempt++) {
+            try {
+                try {
+                    Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException e) {
+                    Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
+                }
+                return;
+            } catch (java.nio.file.AccessDeniedException e) {
+                if (attempt >= 4) throw e;
+                LockSupport.parkNanos(30_000_000L);
+            }
+        }
+    }
+
     private void save(Tile t) {
         if (!t.unsaved) return;
         t.unsaved = false;
@@ -662,11 +679,7 @@ public final class MapWorker implements Runnable {
             Files.createDirectories(path.getParent());
             Path temp = path.resolveSibling(path.getFileName() + ".tmp");
             Files.write(temp, bytes);
-            try {
-                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException e) {
-                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
-            }
+            moveIntoPlace(temp, path);
         } catch (IOException | RuntimeException e) {
             CharMap.once("tile-write", "Couldn't save a map tile: " + path, e);
         }
