@@ -283,7 +283,7 @@ public final class ClientChecks {
             MapClient.WAYPOINTS.add(new Waypoint("Nether door", 100, 70, 100, Waypoint.NETHER, 0x7A7FFF, false));
             MapClient.saveWaypoints();
             Teammates.extra = List.of(
-                    new Teammates.Mate(UUID.nameUUIDFromBytes(new byte[] {1}), "MiGhtyRAAin87", mc.player.getX() - 40, y, mc.player.getZ() + 20, "minecraft:overworld", 20, 20),
+                    new Teammates.Mate(UUID.nameUUIDFromBytes(new byte[] {1}), "Teammate", mc.player.getX() - 40, y, mc.player.getZ() + 20, "minecraft:overworld", 20, 20),
                     new Teammates.Mate(UUID.nameUUIDFromBytes(new byte[] {2}), "Friend", mc.player.getX() + 900, y, mc.player.getZ() - 400, "minecraft:overworld", 20, 20),
                     new Teammates.Mate(UUID.nameUUIDFromBytes(new byte[] {3}), "Elsewhere", 0, 64, 0, "minecraft:the_nether", 20, 20));
         });

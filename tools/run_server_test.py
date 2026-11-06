@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-JAR = r'C:\Users\black\Downloads\arclight-forge-1.20.1-1.0.6-SNAPSHOT-5dc8683.jar'
+JAR = os.path.join(os.path.expanduser('~'), 'Downloads', 'arclight-forge-1.20.1-1.0.6-SNAPSHOT-5dc8683.jar')
 JAVA = r'C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot\bin\java.exe'
 RUN = os.path.abspath('run-arclight')
 PORT = 25599
